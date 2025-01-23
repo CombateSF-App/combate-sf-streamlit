@@ -21,11 +21,11 @@ st.set_page_config(page_title="MAXSATT - Plataforma de Monitoramento", layout="w
 #st.markdown("<h1 style='text-align:center;'font-size:40px;'>Plataforma de Monitoramento de Formigas por Sensoriamento Remoto</h1>", unsafe_allow_html=True)
 
 # Adicionando a logo do Maxsatt na aba lateral
-print(os.getcw(), os.listdir(os.getcw()))
+print(os.getcwd(), os.listdir(os.getcwd()))
 st.sidebar.image("app_final/logos/logotipo_Maxsatt.png", use_container_width=False, width=150)
 
 # Importando bases de dados (alterar aqui para mudar a base referenciada)
-print(os.getcw(), os.listdir(os.getcw()))
+print(os.getcwd(), os.listdir(os.getcwd()))
 pred_attack = pd.read_parquet("app_final/prediction/Filtered_pred_attack.parquet")
 stands_all = gpd.read_file("app_final/prediction/Talhoes_Manulife_2.shp")
 
