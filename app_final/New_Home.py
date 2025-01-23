@@ -10,8 +10,9 @@ import locale
 import io
 from PyPDF2 import PdfWriter, PdfReader
 import path
+import sys
 
-dir = path.Path(_file_).abspath()
+dir = path.Path(__file__).abspath()
 sys.append.path(dir)
 
 # Definindo a língua (utilizado para extrair o mês do formato datetime em português)
