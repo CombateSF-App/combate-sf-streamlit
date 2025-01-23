@@ -8,3 +8,4 @@ plotly[graph_objects]
 PyPDF2[PdfWriter]
 PyPDF2[PdfReader]
 path
+sys
