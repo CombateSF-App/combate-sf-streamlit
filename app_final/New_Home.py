@@ -26,7 +26,7 @@ st.sidebar.image("app_final/logos/logotipo_Maxsatt.png", use_container_width=Fal
 
 # Importando bases de dados (alterar aqui para mudar a base referenciada)
 print(os.getcwd(), os.listdir(os.getcwd()))
-pred_attack = pd.read_parquet("app_final/prediction/Filtered_pred_attack.parquet")
+pred_attack = pd.read_parquet("app_final/prediction/filtered_pred_attack.parquet")
 stands_all = gpd.read_file("app_final/prediction/Talhoes_Manulife_2.shp")
 
 # Tratando a base pred_attack
