@@ -5,7 +5,6 @@ matplotlib[pyplot]
 contextily
 plotly[express]
 plotly[graph_objects]
-locale
 io
 PyPDF2[PdfWriter]
 PyPDF2[PdfReader]
