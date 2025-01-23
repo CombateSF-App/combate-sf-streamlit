@@ -9,7 +9,7 @@ import contextily as ctx
 import locale
 import io
 from PyPDF2 import PdfWriter, PdfReader
-import path
+import pathlib
 import sys
 
 dir = path.Path(__file__).abspath()
