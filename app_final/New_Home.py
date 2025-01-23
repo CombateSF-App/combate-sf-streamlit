@@ -11,7 +11,7 @@ import io
 from PyPDF2 import PdfWriter, PdfReader
 
 # Definindo a língua (utilizado para extrair o mês do formato datetime em português)
-locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil.1252')
+#locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil.1252')
 
 # Configurando a nomenclatura da aba no navegador
 st.set_page_config(page_title="MAXSATT - Plataforma de Monitoramento", layout="wide")
