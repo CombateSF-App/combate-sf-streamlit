@@ -11,6 +11,10 @@ import io
 from PyPDF2 import PdfWriter, PdfReader
 import pathlib
 import sys
+import os
+
+print(os.listdir(os.getcwd()))
+print('0000000000000000000000000000000')
 
 dir = pathlib.Path(__file__).absolute()
 sys.path.append(dir)
