@@ -23,8 +23,8 @@ st.set_page_config(page_title="MAXSATT - Plataforma de Monitoramento", layout="w
 st.sidebar.image("app_final/logos/logotipo_Maxsatt.png", use_container_width=False, width=150)
 
 # Importando bases de dados (alterar aqui para mudar a base referenciada)
-pred_attack = pd.read_parquet("prediction/Filtered_pred_attack.parquet")
-stands_all = gpd.read_file("prediction/Talhoes_Manulife_2.shp")
+pred_attack = pd.read_parquet("app_final/prediction/Filtered_pred_attack.parquet")
+stands_all = gpd.read_file("app_final/prediction/Talhoes_Manulife_2.shp")
 
 # Tratando a base pred_attack
 pred_attack['COMPANY'] = pred_attack['COMPANY'].str.upper()
