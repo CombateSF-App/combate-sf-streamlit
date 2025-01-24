@@ -9,10 +9,9 @@ import contextily as ctx
 import locale
 import io
 from PyPDF2 import PdfWriter, PdfReader
-import os
 
 # Definindo a língua (utilizado para extrair o mês do formato datetime em português)
-#locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil.1252')
+locale.setlocale(locale.LC_TIME, 'Portuguese_Brazil.1252')
 
 # Configurando a nomenclatura da aba no navegador
 st.set_page_config(page_title="MAXSATT - Plataforma de Monitoramento", layout="wide")
@@ -21,13 +20,11 @@ st.set_page_config(page_title="MAXSATT - Plataforma de Monitoramento", layout="w
 #st.markdown("<h1 style='text-align:center;'font-size:40px;'>Plataforma de Monitoramento de Formigas por Sensoriamento Remoto</h1>", unsafe_allow_html=True)
 
 # Adicionando a logo do Maxsatt na aba lateral
-print(os.getcwd(), os.listdir(os.getcwd()))
-st.sidebar.image("app_final/logos/logotipo_Maxsatt.png", use_container_width=False, width=150)
+st.sidebar.image("logos\logotipo_Maxsatt.png", use_column_width=False, width=150)
 
 # Importando bases de dados (alterar aqui para mudar a base referenciada)
-print(os.getcwd(), os.listdir(os.getcwd()))
-pred_attack = pd.read_parquet("app_final/prediction/filtered_pred_attack.parquet")
-stands_all = gpd.read_file("app_final/prediction/Talhoes_Manulife_2.shp")
+pred_attack = pd.read_parquet("prediction\Filtered_pred_attack.parquet")
+stands_all = gpd.read_file("prediction\Talhoes_Manulife_2.shp")
 
 # Tratando a base pred_attack
 pred_attack['COMPANY'] = pred_attack['COMPANY'].str.upper()
@@ -98,8 +95,8 @@ grouped_farm['farm_desfolha_area_ha'] = grouped_farm['count']/100
 grouped_farm['total'] = grouped_farm.groupby(['DATE', 'FARM'])['count'].transform('sum')
 grouped_farm['percentage'] = (grouped_farm['count'] / grouped_farm['total']) * 100
 grouped_farm = grouped_farm[grouped_farm['Status'] == 'Desfolha'].sort_values(by='DATE')
-grouped_farm['farm_total_area_ha'] = grouped_farm['farm_total_area_ha'].round(3)
-grouped_farm['percentage'] = grouped_farm['percentage'].round(3)
+grouped_farm['farm_total_area_ha'] = grouped_farm['farm_total_area_ha'].round(1)
+grouped_farm['percentage'] = grouped_farm['percentage'].round(1)
 
 # Base filtrada para data selecionada
 grouped_farm_date = grouped_farm[grouped_farm['DATE']==data]
@@ -118,8 +115,8 @@ grouped_stand['stand_desfolha_area_ha'] = grouped_stand['count']/100
 grouped_stand['total'] = grouped_stand.groupby(['DATE', 'FARM', 'STAND'])['count'].transform('sum')
 grouped_stand['percentage'] = (grouped_stand['count'] / grouped_stand['total']) * 100
 grouped_stand = grouped_stand[grouped_stand['Status'] == 'Desfolha'].sort_values(by='DATE')
-grouped_stand['stand_total_area_ha'] = grouped_stand['stand_total_area_ha'].round(3)
-grouped_stand['percentage'] = grouped_stand['percentage'].round(3)
+grouped_stand['stand_total_area_ha'] = grouped_stand['stand_total_area_ha'].round(1)
+grouped_stand['percentage'] = grouped_stand['percentage'].round(1)
 grouped_stand = grouped_stand.drop_duplicates(subset=['DATE', 'FARM', 'STAND'])
 grouped_stand = grouped_stand.sort_values(by='stand_desfolha_area_ha', ascending=False)
 
@@ -133,7 +130,7 @@ grouped_stand_farm = grouped_stand_farm.sort_values(by='stand_desfolha_area_ha',
 # PREPARAR AS PLANILHAS PARA DOWNLOAD
 
 # Planilha fazendas
-# Criar coluna de mês
+# Criar coluna de mês e filtrar por data
 grouped_farm['DATE'] = pd.to_datetime(grouped_farm['DATE'])
 grouped_farm['Mes'] = grouped_farm['DATE'].dt.strftime('%b').str.lower()
 
@@ -155,8 +152,18 @@ grouped_farm['percentage_diff'] = grouped_farm.groupby('FARM')['percentage'].dif
 grouped_farm['Outra desfolha'] = grouped_farm.apply(lambda row: row['farm_total_area_ha'] if row['percentage_diff'] > 8 else None, axis=1)
 grouped_farm.loc[grouped_farm['Outra desfolha'].notna(), 'Controle 3M'] = None
 
+grouped_farm_temp = grouped_farm.copy()
+grouped_farm = grouped_farm[grouped_farm['DATE'].dt.date==data]
+
+grouped_farm_csv = grouped_farm.copy()
+grouped_farm_csv = (grouped_farm_csv.rename(columns={
+    'DATE': 'Data', 'FARM': 'Fazenda', 'farm_total_area_ha': 'Área total da fazenda', 
+    'farm_desfolha_area_ha': 'Área total em desfolha', 'percentage': 'Porcentagem'}))
+
+grouped_farm_csv.drop(columns = ['count', 'total', 'Mes'], inplace=True)
+
 # Definindo a planilha a ser exportada
-csv_farm = grouped_farm.to_csv(index=False).encode('utf-8')
+csv_farm = grouped_farm_csv.to_csv(index=False).encode('utf-8')
 
 # Planilha talhões
 # Criar coluna de mês
@@ -181,12 +188,20 @@ grouped_stand['percentage_diff'] = grouped_stand.groupby('STAND')['percentage'].
 grouped_stand['Outra desfolha'] = grouped_stand.apply(lambda row: row['stand_total_area_ha'] if row['percentage_diff'] > 8 else None, axis=1)
 grouped_stand.loc[grouped_stand['Outra desfolha'].notna(), 'Controle 3M'] = None
 
+grouped_stand_temp = grouped_stand.copy()
+grouped_stand = grouped_stand[grouped_stand['DATE'].dt.date==data]
+
+grouped_stand_csv = grouped_stand.copy()
+grouped_stand_csv = (grouped_stand_csv.rename(columns={
+    'DATE': 'Data', 'FARM': 'Fazenda', 'STAND': 'Talhão', 'stand_total_area_ha': 'Área total do talhão', 
+    'stand_desfolha_area_ha': 'Área total em desfolha', 'percentage': 'Porcentagem'}))
+
+grouped_stand_csv.drop(columns = ['count', 'total', 'Mes'], inplace=True)
+
 # Definindo a planilha a ser exportada
-csv_stand = grouped_stand.to_csv(index=False).encode('utf-8')
+csv_stand = grouped_stand_csv.to_csv(index=False).encode('utf-8')
 
 # TABELA RECOMENDAÇÃO GERAL
-
-grouped_stand_tabela = grouped_stand[grouped_stand['DATE']==data]
 
 recommendations = {
     'Si Monitorar': 'Sem infestação: seguir monitorando',
@@ -198,17 +213,17 @@ recommendations = {
 recomendacao_geral = pd.DataFrame({
     'Recomendação': ['Si Monitorar', 'Controle 9M', 'Controle 3M', 'Outra desfolha'],
     'Área': [
-        grouped_stand_tabela['Si Monitorar'].sum(),
-        grouped_stand_tabela['Controle 9M'].sum(),
-        grouped_stand_tabela['Controle 3M'].sum(),
-        grouped_stand_tabela['Outra desfolha'].sum()
+        grouped_stand['Si Monitorar'].sum(),
+        grouped_stand['Controle 9M'].sum(),
+        grouped_stand['Controle 3M'].sum(),
+        grouped_stand['Outra desfolha'].sum()
     ],
     'O que?': [recommendations['Si Monitorar'], recommendations['Controle 9M'], recommendations['Controle 3M'], recommendations['Outra desfolha']]
 })
 
 # TABELA RECOMENDAÇÃO FAZENDA
 
-grouped_stand_tabela_2 = grouped_stand[(grouped_stand['DATE']==data) & (grouped_stand['FARM']==fazenda)]
+grouped_stand_tabela = grouped_stand[grouped_stand['FARM']==fazenda]
 
 recomendacao_farm = pd.DataFrame({
     'Recomendação': ['Si Monitorar', 'Controle 9M', 'Controle 3M', 'Outra desfolha'],
@@ -561,7 +576,7 @@ cbar.ax.tick_params(labelsize=6)
 # GRÁFICO TEMPORAL POR FAZENDA
 
 # Base auxiliar
-monthly_avg_farm = grouped_farm[grouped_farm['FARM']==fazenda]
+monthly_avg_farm = grouped_farm_temp[grouped_farm_temp['FARM']==fazenda]
 
 # Gerando o gráfico
 fig9 = go.Figure()
@@ -591,7 +606,7 @@ fig9.update_layout(
 # GRÁFICO TEMPORAL POR TALHÃO
 
 # Base auxiliar
-monthly_avg_stand = grouped_stand[grouped_stand['STAND']==talhao]
+monthly_avg_stand = grouped_stand_temp[grouped_stand_temp['STAND']==talhao]
 
 # Gerando o gráfico
 fig10 = go.Figure()
@@ -620,13 +635,12 @@ fig10.update_layout(
 
 # DOWNLOAD GEOPDF
 
-def create_geopdf(mapa):
-
+def create_geopdf(mapa, bounds):
     pdf_buffer = io.BytesIO()
+    plt.figure(mapa.number) 
     plt.savefig(pdf_buffer, format="pdf", bbox_inches="tight")
     plt.close(mapa)
 
-    bounds = stands_sel.total_bounds
     writer = PdfWriter()
     pdf_buffer.seek(0)
     reader = PdfReader(pdf_buffer)
@@ -758,15 +772,19 @@ st.sidebar.download_button(
 
 # GeoPDFs
 st.sidebar.write("Baixar GeoPDF")
-pdf_file_farm = create_geopdf(fig7)
+
+bounds_farm = stands_sel.total_bounds
 st.sidebar.download_button(
     label="Baixar GeoPDF da fazenda",
-    data=pdf_file_farm.getvalue(),
-    file_name="mapa_georreferenciado.pdf",
-    mime="application/pdf")
-pdf_file_stand = create_geopdf(fig8)
+    data=create_geopdf(fig7, bounds_farm).getvalue(),
+    file_name="fazenda_georreferenciado.pdf",
+    mime="application/pdf"
+)
+
+bounds_stand = stands_sel.total_bounds
 st.sidebar.download_button(
     label="Baixar GeoPDF do talhão",
-    data=pdf_file_stand.getvalue(),
-    file_name="mapa_georreferenciado.pdf",
-    mime="application/pdf")
+    data=create_geopdf(fig8, bounds_stand).getvalue(),
+    file_name="talhao_georreferenciado.pdf",
+    mime="application/pdf"
+)
