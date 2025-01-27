@@ -141,6 +141,7 @@ average_farm = (
     .mean()
     .reset_index()
     .rename(columns={'percentage': 'Average%'}))
+average_farm['Average%'] = average_farm['Average%'].round(1)
 grouped_farm = grouped_farm.merge(average_farm, on=['FARM', 'Mes'], how='left')
 
 # Criando as colunas de recomendação
@@ -149,16 +150,16 @@ grouped_farm['Controle 9M'] = grouped_farm.apply(lambda row: row['farm_total_are
 grouped_farm['Controle 3M'] = grouped_farm.apply(lambda row: row['farm_total_area_ha'] if row['Average%'] > 5 else None, axis=1)
 grouped_farm = grouped_farm.sort_values(by=['FARM', 'DATE'])
 grouped_farm['percentage_diff'] = grouped_farm.groupby('FARM')['percentage'].diff()
+grouped_farm['percentage_diff'] = grouped_farm['percentage_diff'].round(1)
 grouped_farm['Outra desfolha'] = grouped_farm.apply(lambda row: row['farm_total_area_ha'] if row['percentage_diff'] > 8 else None, axis=1)
 grouped_farm.loc[grouped_farm['Outra desfolha'].notna(), 'Controle 3M'] = None
 
 grouped_farm_temp = grouped_farm.copy()
-grouped_farm = grouped_farm[grouped_farm['DATE'].dt.date==data]
 
 grouped_farm_csv = grouped_farm.copy()
 grouped_farm_csv = (grouped_farm_csv.rename(columns={
-    'DATE': 'Data', 'FARM': 'Fazenda', 'farm_total_area_ha': 'Área total da fazenda', 
-    'farm_desfolha_area_ha': 'Área total em desfolha', 'percentage': 'Porcentagem'}))
+    'DATE': 'Data', 'FARM': 'Fazenda', 'farm_total_area_ha': 'Area total da fazenda', 
+    'farm_desfolha_area_ha': 'Area total em desfolha', 'percentage': 'Porcentagem'}))
 
 grouped_farm_csv.drop(columns = ['count', 'total', 'Mes'], inplace=True)
 
@@ -177,6 +178,7 @@ average_stand = (
     .mean()
     .reset_index()
     .rename(columns={'percentage': 'Average%'}))
+average_stand['Average%'] = average_stand['Average%'].round(1)
 grouped_stand = grouped_stand.merge(average_stand, on=['STAND', 'Mes'], how='left')
 
 # Criando as colunas de recomendação
@@ -185,16 +187,16 @@ grouped_stand['Controle 9M'] = grouped_stand.apply(lambda row: row['stand_total_
 grouped_stand['Controle 3M'] = grouped_stand.apply(lambda row: row['stand_total_area_ha'] if row['Average%'] > 5 else None, axis=1)
 grouped_stand = grouped_stand.sort_values(by=['STAND', 'DATE'])
 grouped_stand['percentage_diff'] = grouped_stand.groupby('STAND')['percentage'].diff()
+grouped_stand['percentage_diff'] = grouped_stand['percentage_diff'].round(1)
 grouped_stand['Outra desfolha'] = grouped_stand.apply(lambda row: row['stand_total_area_ha'] if row['percentage_diff'] > 8 else None, axis=1)
 grouped_stand.loc[grouped_stand['Outra desfolha'].notna(), 'Controle 3M'] = None
 
 grouped_stand_temp = grouped_stand.copy()
-grouped_stand = grouped_stand[grouped_stand['DATE'].dt.date==data]
 
 grouped_stand_csv = grouped_stand.copy()
 grouped_stand_csv = (grouped_stand_csv.rename(columns={
-    'DATE': 'Data', 'FARM': 'Fazenda', 'STAND': 'Talhão', 'stand_total_area_ha': 'Área total do talhão', 
-    'stand_desfolha_area_ha': 'Área total em desfolha', 'percentage': 'Porcentagem'}))
+    'DATE': 'Data', 'FARM': 'Fazenda', 'STAND': 'Talhao', 'stand_total_area_ha': 'Area total do talhao', 
+    'stand_desfolha_area_ha': 'Area total em desfolha', 'percentage': 'Porcentagem'}))
 
 grouped_stand_csv.drop(columns = ['count', 'total', 'Mes'], inplace=True)
 
@@ -202,6 +204,8 @@ grouped_stand_csv.drop(columns = ['count', 'total', 'Mes'], inplace=True)
 csv_stand = grouped_stand_csv.to_csv(index=False).encode('utf-8')
 
 # TABELA RECOMENDAÇÃO GERAL
+
+grouped_stand_data = grouped_stand[grouped_stand['DATE'].dt.date==data]
 
 recommendations = {
     'Si Monitorar': 'Sem infestação: seguir monitorando',
@@ -213,17 +217,17 @@ recommendations = {
 recomendacao_geral = pd.DataFrame({
     'Recomendação': ['Si Monitorar', 'Controle 9M', 'Controle 3M', 'Outra desfolha'],
     'Área': [
-        grouped_stand['Si Monitorar'].sum(),
-        grouped_stand['Controle 9M'].sum(),
-        grouped_stand['Controle 3M'].sum(),
-        grouped_stand['Outra desfolha'].sum()
+        grouped_stand_data['Si Monitorar'].sum(),
+        grouped_stand_data['Controle 9M'].sum(),
+        grouped_stand_data['Controle 3M'].sum(),
+        grouped_stand_data['Outra desfolha'].sum()
     ],
     'O que?': [recommendations['Si Monitorar'], recommendations['Controle 9M'], recommendations['Controle 3M'], recommendations['Outra desfolha']]
 })
 
 # TABELA RECOMENDAÇÃO FAZENDA
 
-grouped_stand_tabela = grouped_stand[grouped_stand['FARM']==fazenda]
+grouped_stand_tabela = grouped_stand_data[grouped_stand_data['FARM']==fazenda]
 
 recomendacao_farm = pd.DataFrame({
     'Recomendação': ['Si Monitorar', 'Controle 9M', 'Controle 3M', 'Outra desfolha'],
@@ -587,7 +591,7 @@ fig9.add_trace(go.Scatter(
     name='Média Mensal (%)',
     line=dict(color='red', width=2),
     marker=dict(size=6),
-    text=monthly_avg_farm['Average%'].round(2), 
+    text=monthly_avg_farm['Average%'].round(1), 
     textposition='top center',
     textfont=dict(size=12, color='black')))
 
@@ -758,12 +762,13 @@ with col2:
 #  BOTÕES DE DOWNLOAD
 
 # Planilhas de recomendação
-st.sidebar.write("**Baixar planilhas de recomendação:**")
-st.sidebar.download_button(
-    label="Planilha por fazenda",
-    data=csv_farm,
-    file_name='recomendacao_fazenda.csv',
-    mime='text/csv')
+st.sidebar.write("**Baixar planilha de recomendação:**")
+# Descomentar esse trecho para mostrar a planilha por fazenda
+#st.sidebar.download_button(
+#    label="Planilha por fazenda",
+#    data=csv_farm,
+#    file_name='recomendacao_fazenda.csv',
+#    mime='text/csv')
 st.sidebar.download_button(
     label="Planilha por talhão",
     data=csv_stand,
