@@ -8,6 +8,7 @@ import matplotlib.pyplot as plt
 import contextily as ctx
 import locale
 import io
+from io import BytesIO
 from PyPDF2 import PdfWriter, PdfReader
 
 # Definindo a língua (utilizado para extrair o mês do formato datetime em português)
@@ -156,15 +157,15 @@ grouped_farm.loc[grouped_farm['Outra desfolha'].notna(), 'Controle 3M'] = None
 
 grouped_farm_temp = grouped_farm.copy()
 
-grouped_farm_csv = grouped_farm.copy()
-grouped_farm_csv = (grouped_farm_csv.rename(columns={
+grouped_farm_excel = grouped_farm.copy()
+grouped_farm_excel = (grouped_farm_excel.rename(columns={
     'DATE': 'Data', 'FARM': 'Fazenda', 'farm_total_area_ha': 'Area total da fazenda', 
     'farm_desfolha_area_ha': 'Area total em desfolha', 'percentage': 'Porcentagem'}))
 
-grouped_farm_csv.drop(columns = ['count', 'total', 'Mes'], inplace=True)
+grouped_farm_excel.drop(columns = ['count', 'total', 'Mes', 'percentage_diff', 'Outra desfolha'], inplace=True)
 
 # Definindo a planilha a ser exportada
-csv_farm = grouped_farm_csv.to_csv(index=False).encode('utf-8')
+#excel_farm = grouped_farm_excel.to_excel(index=False).encode('utf-8')
 
 # Planilha talhões
 # Criar coluna de mês
@@ -193,15 +194,15 @@ grouped_stand.loc[grouped_stand['Outra desfolha'].notna(), 'Controle 3M'] = None
 
 grouped_stand_temp = grouped_stand.copy()
 
-grouped_stand_csv = grouped_stand.copy()
-grouped_stand_csv = (grouped_stand_csv.rename(columns={
+grouped_stand_excel = grouped_stand.copy()
+grouped_stand_excel = (grouped_stand_excel.rename(columns={
     'DATE': 'Data', 'FARM': 'Fazenda', 'STAND': 'Talhao', 'stand_total_area_ha': 'Area total do talhao', 
     'stand_desfolha_area_ha': 'Area total em desfolha', 'percentage': 'Porcentagem'}))
 
-grouped_stand_csv.drop(columns = ['count', 'total', 'Mes'], inplace=True)
+grouped_stand_excel.drop(columns = ['count', 'total', 'Mes', 'percentage_diff', 'Outra desfolha'], inplace=True)
 
 # Definindo a planilha a ser exportada
-csv_stand = grouped_stand_csv.to_csv(index=False).encode('utf-8')
+#excel_stand = grouped_stand_excel.to_excel(index=False).encode('utf-8')
 
 # TABELA RECOMENDAÇÃO GERAL
 
@@ -665,6 +666,16 @@ def create_geopdf(mapa, bounds):
     final_buffer.seek(0)
     return final_buffer
 
+
+# DOWNLOAD EXCEL
+
+def to_excel(df):
+    output = BytesIO()
+    with pd.ExcelWriter(output, engine="openpyxl") as writer:
+        df.to_excel(writer, index=False)
+    output.seek(0)  
+    return output
+
 # DISPLAY
 
 # Visão geral
@@ -766,14 +777,14 @@ st.sidebar.write("**Baixar planilha de recomendação:**")
 # Descomentar esse trecho para mostrar a planilha por fazenda
 #st.sidebar.download_button(
 #    label="Planilha por fazenda",
-#    data=csv_farm,
+#    data=to_excel(grouped_farm_excel),
 #    file_name='recomendacao_fazenda.csv',
 #    mime='text/csv')
 st.sidebar.download_button(
     label="Planilha por talhão",
-    data=csv_stand,
-    file_name='recomendacao_talhao.csv',
-    mime='text/csv')
+    data=to_excel(grouped_stand_excel),
+    file_name='recomendacao_talhao.xlsx',
+    mime='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet')
 
 # GeoPDFs
 st.sidebar.write("Baixar GeoPDF")
