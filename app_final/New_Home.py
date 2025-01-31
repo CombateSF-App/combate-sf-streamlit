@@ -21,7 +21,7 @@ st.set_page_config(page_title="MAXSATT - Plataforma de Monitoramento", layout="w
 #st.markdown("<h1 style='text-align:center;'font-size:40px;'>Plataforma de Monitoramento de Formigas por Sensoriamento Remoto</h1>", unsafe_allow_html=True)
 
 # Adicionando a logo do Maxsatt na aba lateral
-st.sidebar.image("logos\logotipo_Maxsatt.png", use_column_width=False, width=150)
+st.sidebar.image("logos\logotipo_Maxsatt.png", use_container_width=False, width=150)
 
 # Importando bases de dados (alterar aqui para mudar a base referenciada)
 pred_attack = pd.read_parquet("prediction\Filtered_pred_attack.parquet")
@@ -50,10 +50,17 @@ def calculate_farm_area(group):
 stands_all['farm_total_area_ha'] = stands_all.groupby('FARM').apply(calculate_farm_area).reindex(stands_all['FARM']).values
 
 # Configurando os filtros
-empresa = st.sidebar.selectbox('Selecione a Empresa', options=pred_attack['COMPANY'].unique())
+# Get the single company name (assuming there's only one unique company)
+empresa = pred_attack['COMPANY'].unique()[0]
+
+# Display the title in the sidebar
+st.sidebar.write(f"**Empresa:** {empresa}")
+
 fazenda = st.sidebar.selectbox('Selecione a Fazenda', options=pred_attack[pred_attack['COMPANY'] == empresa]['FARM'].unique())
 talhao = st.sidebar.selectbox('Selecione o Talhão', options=pred_attack[(pred_attack['FARM'] == fazenda)]['STAND'].unique())
-data = st.sidebar.selectbox('Selecione a data', options=pred_attack['DATE'].unique())
+sorted_dates = sorted(pred_attack['DATE'].unique(), reverse=True)
+
+data = st.sidebar.selectbox('Selecione a data', options=sorted_dates, index=0)
 
 # Bases filtradas com diferentes granularidades (pred_attack)
 filtered_data_company_date = pred_attack[(pred_attack['COMPANY'] == empresa) & (pred_attack['DATE'] == data)]
@@ -112,6 +119,7 @@ grouped_stand = (merged_df_all.dropna(subset=['Status'])
                 .agg(count=('Status', 'size'))
                 .reset_index()
                 .merge(unique_area_per_stand[['STAND', 'stand_total_area_ha']], on='STAND', how='left'))
+                
 grouped_stand['stand_desfolha_area_ha'] = grouped_stand['count']/100
 grouped_stand['total'] = grouped_stand.groupby(['DATE', 'FARM', 'STAND'])['count'].transform('sum')
 grouped_stand['percentage'] = (grouped_stand['count'] / grouped_stand['total']) * 100
@@ -352,44 +360,83 @@ sizes = [other_area_ha, farm_area_ha]
 colors = ['lightgray', 'darkgreen']
 labels = ['Demais fazendas', fazenda]
 
-# Gerando o gráfico
+# Calculate total desfolha and healthy areas
+total_area_desfolha = grouped_farm_date['farm_desfolha_area_ha'].sum()
+total_area_healthy = total_area_ha - total_area_desfolha
+
+# Define labels and sizes for the pie chart
+labels = ['Área Saudável', 'Área em Desfolha']
+sizes = [total_area_healthy, total_area_desfolha]
+colors = ['darkgreen', 'red']  # Adjust colors to your preference
+
+# Generate the pie chart with custom labels and colors
 fig1 = go.Figure()
+
 fig1.add_trace(go.Pie(
-    labels=labels,
-    values=sizes,
-    marker=dict(colors=colors),
-    insidetextorientation='radial',
-    textinfo='label+percent',
+    labels=['Área Total Saudável', 'Área Total c/ Desfolha'],
+    values=[total_area_healthy, total_area_desfolha],
+    marker=dict(colors=['darkgreen', 'red']),
+    textinfo='percent',
+    textfont=dict(size=20),  # Increase percentage text size inside the pie chart
     hovertemplate=(
-                '<b>%{label}</b><br>'
+        '<b>%{label}</b><br>'
         'Área: %{value:.2f} ha<br>'
         'Porcentagem: %{percent:.1%}<extra></extra>'
-    )))
+    ),
+    showlegend=True
+))
 
-# Ajustando o visual 
+# Update the layout to move the legend to the bottom of the page
 fig1.update_layout(
-    title={'text': f"Área Monitorada {empresa}", 'y': 0.95, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'color': 'black', 'size': 21}},
-    paper_bgcolor='#f5f5f5', 
-    showlegend=False)
+    title={
+        'text': "Área Monitorada",
+        'y': 0.95,
+        'x': 0.5,
+        'xanchor': 'center',
+        'yanchor': 'top',
+        'font': {'color': 'black', 'size': 21}
+    },
+    paper_bgcolor='#f5f5f5',
+    plot_bgcolor='rgba(0,0,0,0)',
+    showlegend=True,
+    legend=dict(
+        orientation="h",  # Horizontal legend
+        yanchor="top",
+        y=-0.3,  # Move legend farther below the pie chart (adjust if needed)
+        xanchor="center",
+        x=0.5,
+        font=dict(size=14, color='black'),
+        bgcolor='rgba(0,0,0,0)'  # Transparent background for the legend
+    )
+)
 
-# ÁREA DESFOLHA POR FAZENDA
+# Calculate desfolha percentage and healthy area
+grouped_farm_date['percentage_desfolha'] = (
+    grouped_farm_date['farm_desfolha_area_ha'] / grouped_farm_date['farm_total_area_ha']
+) * 100
 
-# Criando uma coluna auxiliar
-grouped_farm_date['Área Saudável (ha)'] = grouped_farm_date['farm_total_area_ha'] - grouped_farm_date['farm_desfolha_area_ha']
+grouped_farm_date['healthy_area_ha'] = (
+    grouped_farm_date['farm_total_area_ha'] - grouped_farm_date['farm_desfolha_area_ha']
+)
 
-# Transformando os dados para o formato correto
+# Sort by percentage of desfolha
+grouped_farm_date = grouped_farm_date.sort_values(by='percentage_desfolha', ascending=False)
+
+# Transform data to long format
 grouped_farm_date_long = grouped_farm_date.melt(
-    id_vars='FARM',
-    value_vars=['farm_desfolha_area_ha', 'Área Saudável (ha)'],
+    id_vars=['FARM', 'percentage_desfolha'],
+    value_vars=['farm_desfolha_area_ha', 'healthy_area_ha'],
     var_name='Tipo de Área',
-    value_name='Área (ha)')
+    value_name='Área (ha)'
+)
 
-# Tratando os dados
+# Update labels for the chart
 grouped_farm_date_long['Tipo de Área'] = grouped_farm_date_long['Tipo de Área'].map({
     'farm_desfolha_area_ha': 'Área de Desfolha (ha)',
-    'Área Saudável (ha)': 'Área Saudável (ha)'})
+    'healthy_area_ha': 'Área Saudável (ha)'
+})
 
-# Gerando o gráfico
+# Create the bar chart with percentages displayed
 fig2 = px.bar(
     grouped_farm_date_long,
     x='Área (ha)',
@@ -397,146 +444,193 @@ fig2 = px.bar(
     color='Tipo de Área',
     orientation='h',
     barmode='stack',
-    labels={'Área (ha)': 'Área (ha)', 'FARM': 'Fazenda', 'Tipo de Área': 'Categoria'},
-    title='Áreas em desfolha e saudável por Fazenda',
-    color_discrete_map={'Área de Desfolha (ha)': 'red','Área Saudável (ha)': 'darkgreen'})
+    labels={'Área (ha)': 'Área (ha)', 'FARM': 'Fazenda'},
+    title='Ranking de Desfolha por Fazenda',
+    color_discrete_map={
+        'Área de Desfolha (ha)': 'red',
+        'Área Saudável (ha)': 'darkgreen'
+    },
+    text='Área (ha)'  # Display values on the bars
+)
 
-# Ajustando o visual
+# Customize the layout
 fig2.update_layout(
-    xaxis_title=dict(text="Área (ha)",font=dict(size=14, color='black')),
-    yaxis_title=dict(text="Fazenda",font=dict(size=14, color='black')),
+    xaxis_title=dict(text="Área (ha)", font=dict(size=14, color='black')),
+    yaxis_title=dict(text="Fazenda", font=dict(size=14, color='black')),
     xaxis=dict(tickfont=dict(size=12, color='black')),
-    yaxis=dict(tickfont=dict(size=12, color='black'),autorange='reversed'),
+    yaxis=dict(tickfont=dict(size=12, color='black'), autorange='reversed'),
     title_font=dict(size=17, family='Arial', color='black'),
     paper_bgcolor='#f5f5f5',
     plot_bgcolor='rgba(0,0,0,0)',
-    showlegend=False)
+    showlegend=True,
+    legend_title_text='',  # Remove legend title
+    legend=dict(
+        font=dict(size=14, color='black'),
+        bgcolor='rgba(255, 255, 255, 1)'
+    )
+)
 
-# Adicionando os valores ao lado das barras
-fig2.for_each_trace(lambda trace: trace.update(
-    text=grouped_farm_date_long.loc[grouped_farm_date_long['Tipo de Área'] == trace.name, 'Área (ha)'],
-    textposition='inside',
-    texttemplate='%{text:.2f}'))
+# Update traces to customize text and hover info
+fig2.update_traces(
+    texttemplate='%{text:.2f} ha',  # Format the text values
+    textposition='inside',  # Display text inside the bars
+    hovertemplate=(
+        '<b>%{y}</b><br>'
+        'Área: %{x:.2f} ha<br>'
+        'Porcentagem de Desfolha: %{customdata:.1f}%<extra></extra>'
+    ),
+    customdata=grouped_farm_date['percentage_desfolha']  # Add custom hover data
+)
 
 # TALHÕES MAIS INFESTADOS GERAL
 
-# Bases auxiliares
-grouped_stand_date = grouped_stand_date.sort_values(by='stand_desfolha_area_ha', ascending=False)
-top_10_stands_geral = grouped_stand_date.head(10)
+# Calculate percentage of desfolha for each stand
+grouped_stand_date['desfolha_percentage'] = (grouped_stand_date['stand_desfolha_area_ha'] / grouped_stand_date['stand_total_area_ha']) * 100
 
-# Definindo as cores para o degradê
+# Sort by percentage and get the top 10
+top_10_stands_geral = grouped_stand_date.sort_values(by='desfolha_percentage', ascending=False).head(10)
+
+# Define gradient colors for the bars
 colors = ["#FF0000", "#FF2200", "#FF4400", "#FF6600", "#FF8800", "#FFAA00", "#FFBB00", "#FFCC00", "#FFDD33", "#FFEE66"]
 
-# Gerando o gráfico
+# Generate the bar chart
 fig3 = go.Figure()
 fig3.add_trace(go.Bar(
-    x=top_10_stands_geral['stand_desfolha_area_ha'],
+    x=top_10_stands_geral['desfolha_percentage'],
     y=top_10_stands_geral['STAND'],
     orientation='h',
     marker=dict(color=colors),
-    text=top_10_stands_geral['stand_desfolha_area_ha'],
-    textposition='auto'))
+    text=top_10_stands_geral['desfolha_percentage'].round(1).astype(str) + '%',  # Display percentage text
+    textposition='auto'
+))
 
-# Ajustando o visual
+# Adjust chart layout
 fig3.update_layout(
-    title='Top 10 Talhões com Maior Área de Desfolha',
-    xaxis_title=dict(text="Área de Desfolha (ha)",font=dict(size=14, color='black')),
-    yaxis_title=dict(text="Talhão",font=dict(size=14, color='black')),
+    title='Top 10 Talhões com Maior Percentual de Desfolha',
+    xaxis_title=dict(text="Percentual de Desfolha (%)", font=dict(size=14, color='black')),
+    yaxis_title=dict(text="Talhão", font=dict(size=14, color='black')),
     title_font=dict(size=16, family='Arial', color='black'),
     xaxis=dict(tickfont=dict(size=12, color='black')),
-    yaxis=dict(tickfont=dict(size=12, color='black'),autorange='reversed'), 
+    yaxis=dict(tickfont=dict(size=12, color='black'), autorange='reversed'),
     paper_bgcolor='#f5f5f5',
-    plot_bgcolor='rgba(0,0,0,0)')
-
-# GRÁFICO DE ROSCA COBERTURA DE DOSSEL FAZENDA
+    plot_bgcolor='rgba(0,0,0,0)'
+)
 
 # Variável auxiliar
 healthy_area_farm = farm_area_ha_rounded - farm_area_desfolha_rounded
 
-# Definindo parâmetros para o gráfica
-sizes = [healthy_area_farm, farm_area_desfolha_rounded]
-colors = ['darkgreen', 'red']
-labels = ['Saudável', 'Desfolha']
+# Definindo parâmetros para o gráfico
+sizes = [farm_area_desfolha_rounded, healthy_area_farm]
+colors = ['red', 'darkgreen']
+labels = ['Área Total c/ Desfolha', 'Área Total Saudável']
 
-# Gerando o gráfico
+# Gerando o gráfico (Pie Chart)
 fig4 = go.Figure()
 fig4.add_trace(go.Pie(
     labels=labels,
     values=sizes,
     marker=dict(colors=colors),
-    hole=0.5, 
-    textinfo='label',
-    hoverinfo='label+value+percent',
-    texttemplate='%{label}: %{value:.2f} ha',
-    textfont=dict(color='#f5f5f5')))
+    textinfo='percent',
+    texttemplate='%{percent:.1%}',  # Percentages displayed inside
+    insidetextorientation='horizontal',  # Horizontal text orientation
+    hovertemplate=(
+        '<b>%{label}</b><br>'
+        'Área: %{value:.2f} ha<br>'
+        'Porcentagem: %{percent:.1%}<extra></extra>'
+    ),
+    textfont=dict(size=20, color='white')  # Larger white text for percentages
+))
 
-# Ajustando o visual
+# Ajustando o visual do gráfico
 fig4.update_layout(
-    annotations=[dict(text=f"{farm_area_ha_rounded:.2f} ha", x=0.5, y=0.5, font_size=20, showarrow=False, font_color= 'black')],
-    title={'text': f"Área de dossel em {fazenda}", 'y': 0.95, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'color': 'black', 'size': 21}},
-    showlegend=False,
+    title={'text': "Área Monitorada", 'y': 0.95, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'color': 'black', 'size': 21, 'family': 'Arial Black'}},
     paper_bgcolor='#f5f5f5',
-    plot_bgcolor='rgba(0,0,0,0)')
+    plot_bgcolor='rgba(0,0,0,0)',
+    showlegend=True,
+    legend=dict(
+        orientation='h',          # Horizontal legend at the bottom
+        yanchor='bottom',
+        y=-0.2,                   # Position below the chart
+        xanchor='center',
+        x=0.5,
+        font=dict(size=14, color='black'),
+        bgcolor='rgba(0, 0, 0, 0)'
+    )
+)
 
-# TALHÕES MAIS INFESTADOS FAZENDA
+# Base auxiliar: Calculate percentage of desfolha for each stand
+grouped_stand_farm['desfolha_percentage'] = (grouped_stand_farm['stand_desfolha_area_ha'] / grouped_stand_farm['stand_total_area_ha']) * 100
 
-# Base auxiliar
-top_10_stands_farm = grouped_stand_farm.head(10)
+# Sort by percentage in descending order and get the top 10 stands
+top_10_stands_farm = grouped_stand_farm.sort_values(by='desfolha_percentage', ascending=False).head(10)
 
-# Definindo cores para o degradê
+# Define colors for the gradient (optional)
 colors = ["#FF0000", "#FF2200", "#FF4400", "#FF6600", "#FF8800", "#FFAA00", "#FFBB00", "#FFCC00", "#FFDD33", "#FFEE66"]
 
-# Gerando o gráfico
+# Generate the bar chart
 fig5 = go.Figure()
 fig5.add_trace(go.Bar(
-    x=top_10_stands_farm['stand_desfolha_area_ha'],
+    x=top_10_stands_farm['desfolha_percentage'],
     y=top_10_stands_farm['STAND'],
     orientation='h',
     marker=dict(color=colors),
-    text=top_10_stands_farm['stand_desfolha_area_ha'],
-    textposition='auto'))
+    text=top_10_stands_farm['desfolha_percentage'].round(1).astype(str) + '%',  # Display percentage as text
+    textposition='auto'
+))
 
-# Ajustando o visual
+# Adjust chart appearance
 fig5.update_layout(
-    title='Top 10 Talhões com Maior Área de Desfolha',
-    xaxis_title=dict(text="Área de Desfolha (ha)", font=dict(size=14, color='black')),
+    title='Top 10 Talhões com Maior Percentual de Desfolha na fazenda {}'.format(fazenda),
+    xaxis_title=dict(text="Percentual de Desfolha (%)", font=dict(size=14, color='black')),
     yaxis_title=dict(text="Talhão", font=dict(size=14, color='black')),
     title_font=dict(size=16, family='Arial', color='black'),
     xaxis=dict(tickfont=dict(size=12, color='black')),
-    yaxis=dict(tickfont=dict(size=12, color='black'), autorange='reversed'), 
+    yaxis=dict(tickfont=dict(size=12, color='black'), autorange='reversed'),
     paper_bgcolor='#f5f5f5',
-    plot_bgcolor='rgba(0,0,0,0)')
-
-# GRÁFICO DE ROSCA COBERTURA DE DOSSEL TALHÃO
+    plot_bgcolor='rgba(0,0,0,0)'
+)
 
 # Variável auxiliar
 healthy_area_stand = stand_area_ha_rounded - stand_area_desfolha_rounded
 
 # Definindo parâmetros para o gráfico
-sizes = [healthy_area_stand, stand_area_desfolha_rounded]
-colors = ['darkgreen', 'red']
-labels = ['Saudável', 'Desfolha']
+sizes = [stand_area_desfolha_rounded, healthy_area_stand]
+colors = ['red', 'darkgreen']
+labels = ['Área Total c/ Desfolha', 'Área Total Saudável']
 
-# Gerando o gráfico
 fig6 = go.Figure()
 fig6.add_trace(go.Pie(
     labels=labels,
     values=sizes,
     marker=dict(colors=colors),
-    hole=0.5, 
-    textinfo='label',
-    hoverinfo='label+value+percent',
-    texttemplate='%{label}: %{value:.2f} ha',
-    textfont=dict(color='white')))
+    textinfo='percent',
+    texttemplate='%{percent:.1%}',  # Percentages displayed inside
+    textposition='inside',          # Forces text to stay inside
+    insidetextorientation='auto',   # Dynamically adjusts text orientation
+    hovertemplate=(
+        '<b>%{label}</b><br>'
+        'Área: %{value:.2f} ha<br>'
+        'Porcentagem: %{percent:.1%}<extra></extra>'
+    ),
+    textfont=dict(size=18, color='white')  # Reduced size to fit inside small segments
+))
 
-# Ajustando o visual
+# Ajustando o visual do gráfico
 fig6.update_layout(
-    annotations=[dict(text=f"{stand_area_ha_rounded:.2f} ha",x=0.5, y=0.5,font_size=20,showarrow=False,font_color= 'black')],
-    title={'text': f"Área de dossel em {talhao}", 'y': 0.95,'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'color': 'black', 'size': 21}},
-    showlegend=False,
+    title={'text': f"Área Monitorada - {talhao}", 'y': 0.95, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'color': 'black', 'size': 21, 'family': 'Arial Black'}},
     paper_bgcolor='#f5f5f5',
-    plot_bgcolor='rgba(0,0,0,0)')
-
+    plot_bgcolor='rgba(0,0,0,0)',
+    showlegend=True,
+    legend=dict(
+        orientation='h',          # Horizontal legend at the bottom
+        yanchor='bottom',
+        y=-0.2,                   # Position below the chart
+        xanchor='center',
+        x=0.5,
+        font=dict(size=14, color='black'),
+        bgcolor='rgba(0, 0, 0, 0)'
+    )
+)
 # MAPA DE CALOR FAZENDA
 
 # Criando o mapa
@@ -583,18 +677,22 @@ cbar.ax.tick_params(labelsize=6)
 # Base auxiliar
 monthly_avg_farm = grouped_farm_temp[grouped_farm_temp['FARM']==fazenda]
 
+# Base auxiliar filtrada até a data selecionada
+monthly_avg_farm_filtered = monthly_avg_farm[monthly_avg_farm['DATE'] <= pd.to_datetime(data)]
+
 # Gerando o gráfico
 fig9 = go.Figure()
 fig9.add_trace(go.Scatter(
-    x=monthly_avg_farm['Mes'],
-    y=monthly_avg_farm['Average%'],
+    x=monthly_avg_farm_filtered['Mes'],
+    y=monthly_avg_farm_filtered['Average%'],
     mode='lines+markers+text',
     name='Média Mensal (%)',
     line=dict(color='red', width=2),
     marker=dict(size=6),
-    text=monthly_avg_farm['Average%'].round(1), 
+    text=monthly_avg_farm_filtered['Average%'].round(1),
     textposition='top center',
-    textfont=dict(size=12, color='black')))
+    textfont=dict(size=12, color='black')
+))
 
 # Ajustando o visual
 fig9.update_layout(
@@ -606,25 +704,29 @@ fig9.update_layout(
     yaxis=dict(tickfont=dict(size=12, color='black')),
     showlegend=False,
     paper_bgcolor='#f5f5f5',
-    plot_bgcolor='rgba(0,0,0,0)')
+    plot_bgcolor='rgba(0,0,0,0)'
+)
 
 # GRÁFICO TEMPORAL POR TALHÃO
 
 # Base auxiliar
 monthly_avg_stand = grouped_stand_temp[grouped_stand_temp['STAND']==talhao]
+# Base auxiliar filtrada até a data selecionada
+monthly_avg_stand_filtered = monthly_avg_stand[monthly_avg_stand['DATE'] <= pd.to_datetime(data)]
 
 # Gerando o gráfico
 fig10 = go.Figure()
 fig10.add_trace(go.Scatter(
-    x=monthly_avg_stand['Mes'],
-    y=monthly_avg_stand['Average%'],
+    x=monthly_avg_stand_filtered['Mes'],
+    y=monthly_avg_stand_filtered['Average%'],
     mode='lines+markers+text',
     name='Média Mensal (%)',
     line=dict(color='red', width=2),
     marker=dict(size=6),
-    text=monthly_avg_stand['Average%'].round(2),
-    textposition='top center', 
-    textfont=dict(size=12, color='black')))
+    text=monthly_avg_stand_filtered['Average%'].round(2),
+    textposition='top center',
+    textfont=dict(size=12, color='black')
+))
 
 # Ajustando o visual
 fig10.update_layout(
@@ -636,7 +738,8 @@ fig10.update_layout(
     yaxis=dict(tickfont=dict(size=12, color='black')),
     showlegend=False,
     paper_bgcolor='#f5f5f5',
-    plot_bgcolor='rgba(0,0,0,0)')
+    plot_bgcolor='rgba(0,0,0,0)'
+)
 
 # DOWNLOAD GEOPDF
 
@@ -703,13 +806,31 @@ with col3:
     bg_border('#f5f5f5')
     st.plotly_chart(fig3, use_container_width=True)
 
-col1, col2 = st.columns([3, 2])
-with col1:
-    st.write('Recomendações gerais')
-    st.dataframe(recomendacao_geral, height=180)
-with col2:
-    st.write('Resumo do monitoramento')
-    st.dataframe(grouped_farm_date_tabela, height=180)
+# Helper function to create a recommendation card
+def create_recommendation_card(title, recommendations):
+    rec_items = ''.join([
+        f"<li><b>{row['Recomendação']}</b>: {row['Área']:.2f} ha - {row['O que?']}</li>"
+        for _, row in recommendations.iterrows()
+    ])
+    
+    return f"""
+    <div style="
+        background-color: #fdf2e9;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 10px 0;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        font-family: Arial, sans-serif;
+        font-size: 16px;
+    ">
+        <h2 style="color: #d35400; text-align: center;">{title}</h2>
+        <ul style="list-style-type: disc; padding-left: 20px; color: #333;">
+            {rec_items}
+        </ul>
+    </div>
+    """
+
+st.markdown(create_recommendation_card("Recomendações Gerais", recomendacao_geral), unsafe_allow_html=True)
 
 # Informações das fazendas
 
@@ -734,13 +855,8 @@ with col2:
 bg_border('#f5f5f5')
 st.plotly_chart(fig9, use_container_width=True)
 
-col1, col2 = st.columns([2, 1])
-with col1:
-    st.write('Recomendações fazenda')
-    st.dataframe(recomendacao_farm, height=180)
-with col2:
-    st.write('Resumo do monitoramento fazenda')
-    st.dataframe(grouped_stand_date_tabela, height=180)
+st.markdown(create_recommendation_card("Recomendações Gerais", recomendacao_farm), unsafe_allow_html=True)
+
 
 # Informações do talhão
 
