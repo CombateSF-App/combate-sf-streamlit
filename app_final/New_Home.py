@@ -420,7 +420,7 @@ grouped_farm_date['healthy_area_ha'] = (
 )
 
 # Sort by percentage of desfolha
-grouped_farm_date = grouped_farm_date.sort_values(by='percentage_desfolha', ascending=False)
+grouped_farm_date = grouped_farm_date.sort_values(by='percentage', ascending=False)
 
 # Transform data to long format
 grouped_farm_date_long = grouped_farm_date.melt(
@@ -488,7 +488,7 @@ fig2.update_traces(
 grouped_stand_date['desfolha_percentage'] = (grouped_stand_date['stand_desfolha_area_ha'] / grouped_stand_date['stand_total_area_ha']) * 100
 
 # Sort by percentage and get the top 10
-top_10_stands_geral = grouped_stand_date.sort_values(by='desfolha_percentage', ascending=False).head(10)
+top_10_stands_geral = grouped_stand_date.sort_values(by='percentage', ascending=False).head(10)
 
 # Define gradient colors for the bars
 colors = ["#FF0000", "#FF2200", "#FF4400", "#FF6600", "#FF8800", "#FFAA00", "#FFBB00", "#FFCC00", "#FFDD33", "#FFEE66"]
@@ -496,11 +496,11 @@ colors = ["#FF0000", "#FF2200", "#FF4400", "#FF6600", "#FF8800", "#FFAA00", "#FF
 # Generate the bar chart
 fig3 = go.Figure()
 fig3.add_trace(go.Bar(
-    x=top_10_stands_geral['desfolha_percentage'],
+    x=top_10_stands_geral['percentage'],
     y=top_10_stands_geral['STAND'],
     orientation='h',
     marker=dict(color=colors),
-    text=top_10_stands_geral['desfolha_percentage'].round(1).astype(str) + '%',  # Display percentage text
+    text=top_10_stands_geral['percentage'].round(1).astype(str) + '%',  # Display percentage text
     textposition='auto'
 ))
 
@@ -562,7 +562,7 @@ fig4.update_layout(
 grouped_stand_farm['desfolha_percentage'] = (grouped_stand_farm['stand_desfolha_area_ha'] / grouped_stand_farm['stand_total_area_ha']) * 100
 
 # Sort by percentage in descending order and get the top 10 stands
-top_10_stands_farm = grouped_stand_farm.sort_values(by='desfolha_percentage', ascending=False).head(10)
+top_10_stands_farm = grouped_stand_farm.sort_values(by='percentage', ascending=False).head(10)
 
 # Define colors for the gradient (optional)
 colors = ["#FF0000", "#FF2200", "#FF4400", "#FF6600", "#FF8800", "#FFAA00", "#FFBB00", "#FFCC00", "#FFDD33", "#FFEE66"]
@@ -570,11 +570,11 @@ colors = ["#FF0000", "#FF2200", "#FF4400", "#FF6600", "#FF8800", "#FFAA00", "#FF
 # Generate the bar chart
 fig5 = go.Figure()
 fig5.add_trace(go.Bar(
-    x=top_10_stands_farm['desfolha_percentage'],
+    x=top_10_stands_farm['percentage'],
     y=top_10_stands_farm['STAND'],
     orientation='h',
     marker=dict(color=colors),
-    text=top_10_stands_farm['desfolha_percentage'].round(1).astype(str) + '%',  # Display percentage as text
+    text=top_10_stands_farm['percentage'].round(1).astype(str) + '%',  # Display percentage as text
     textposition='auto'
 ))
 
