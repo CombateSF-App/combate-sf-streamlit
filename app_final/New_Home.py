@@ -410,76 +410,67 @@ fig1.update_layout(
     )
 )
 
-# Calculate desfolha percentage and healthy area
-grouped_farm_date['percentage_desfolha'] = (
+grouped_farm_date['percentage'] = (
     grouped_farm_date['farm_desfolha_area_ha'] / grouped_farm_date['farm_total_area_ha']
 ) * 100
 
-grouped_farm_date['healthy_area_ha'] = (
-    grouped_farm_date['farm_total_area_ha'] - grouped_farm_date['farm_desfolha_area_ha']
-)
+# Sort by desfolha area percentage and get top 10 farms
+top_10_farms = grouped_farm_date.sort_values(by='percentage', ascending=False).head(10)
 
-# Sort by percentage of desfolha
-grouped_farm_date = grouped_farm_date.sort_values(by='percentage', ascending=False)
+# Calculate the healthy percentage for each farm
+top_10_farms['healthy_percentage'] = 100 - top_10_farms['percentage']
 
-# Transform data to long format
-grouped_farm_date_long = grouped_farm_date.melt(
-    id_vars=['FARM', 'percentage_desfolha'],
-    value_vars=['farm_desfolha_area_ha', 'healthy_area_ha'],
-    var_name='Tipo de Área',
-    value_name='Área (ha)'
-)
+# Generate the stacked bar chart
+fig2 = go.Figure()
 
-# Update labels for the chart
-grouped_farm_date_long['Tipo de Área'] = grouped_farm_date_long['Tipo de Área'].map({
-    'farm_desfolha_area_ha': 'Área de Desfolha (ha)',
-    'healthy_area_ha': 'Área Saudável (ha)'
-})
-
-# Create the bar chart with percentages displayed
-fig2 = px.bar(
-    grouped_farm_date_long,
-    x='Área (ha)',
-    y='FARM',
-    color='Tipo de Área',
+# Add the red portion for desfolha percentage
+fig2.add_trace(go.Bar(
+    x=top_10_farms['percentage'],
+    y=top_10_farms['FARM'],
     orientation='h',
-    barmode='stack',
-    labels={'Área (ha)': 'Área (ha)', 'FARM': 'Fazenda'},
-    title='Ranking de Desfolha por Fazenda',
-    color_discrete_map={
-        'Área de Desfolha (ha)': 'red',
-        'Área Saudável (ha)': 'darkgreen'
-    },
-    text='Área (ha)'  # Display values on the bars
-)
+    name='Área em Desfolha',
+    marker=dict(color='red'),
+    text=top_10_farms['percentage'].round(1).astype(str) + '%',
+    textposition='inside'
+))
 
-# Customize the layout
+# Add the green portion for the healthy area percentage
+fig2.add_trace(go.Bar(
+    x=top_10_farms['healthy_percentage'],
+    y=top_10_farms['FARM'],
+    orientation='h',
+    name='Área Saudável',
+    marker=dict(color='darkgreen'),
+    text=top_10_farms['healthy_percentage'].round(1).astype(str) + '%',
+    textposition='inside'
+))
+
 fig2.update_layout(
-    xaxis_title=dict(text="Área (ha)", font=dict(size=14, color='black')),
+    title='Top 10 Fazendas com Maior Percentual de Desfolha',
+    xaxis_title=dict(text="Percentual de Área (%)", font=dict(size=14, color='black')),
     yaxis_title=dict(text="Fazenda", font=dict(size=14, color='black')),
-    xaxis=dict(tickfont=dict(size=12, color='black')),
-    yaxis=dict(tickfont=dict(size=12, color='black'), autorange='reversed'),
-    title_font=dict(size=17, family='Arial', color='black'),
+    xaxis=dict(
+        tickfont=dict(size=12, color='black'),
+        range=[0, 100],  # Ensure the full 0-100% scale is displayed
+    ),
+    yaxis=dict(
+        tickfont=dict(size=12, color='black'),
+        autorange='reversed'
+    ),
+    barmode='stack',  # Stack the bars
+    title_font=dict(size=16, family='Arial', color='black'),
     paper_bgcolor='#f5f5f5',
     plot_bgcolor='rgba(0,0,0,0)',
     showlegend=True,
-    legend_title_text='',  # Remove legend title
     legend=dict(
-        font=dict(size=14, color='black'),
-        bgcolor='rgba(255, 255, 255, 1)'
+        orientation='h',  # Horizontal orientation for the legend
+        yanchor='top',
+        y=-0.3,           # Position below the graph (adjust if needed)
+        xanchor='center',
+        x=0.5,
+        font=dict(size=12, color='black'),
+        bgcolor='rgba(0,0,0,0)'  # Transparent background for the legend
     )
-)
-
-# Update traces to customize text and hover info
-fig2.update_traces(
-    texttemplate='%{text:.2f} ha',  # Format the text values
-    textposition='inside',  # Display text inside the bars
-    hovertemplate=(
-        '<b>%{y}</b><br>'
-        'Área: %{x:.2f} ha<br>'
-        'Porcentagem de Desfolha: %{customdata:.1f}%<extra></extra>'
-    ),
-    customdata=grouped_farm_date['percentage_desfolha']  # Add custom hover data
 )
 
 # TALHÕES MAIS INFESTADOS GERAL
@@ -510,7 +501,11 @@ fig3.update_layout(
     xaxis_title=dict(text="Percentual de Desfolha (%)", font=dict(size=14, color='black')),
     yaxis_title=dict(text="Talhão", font=dict(size=14, color='black')),
     title_font=dict(size=16, family='Arial', color='black'),
-    xaxis=dict(tickfont=dict(size=12, color='black')),
+    xaxis=dict(
+        title="Percentual de Desfolha (%)",
+        tickfont=dict(size=12, color='black'),
+        range=[0, 100]  # Set fixed range for the percentage scale
+    ),
     yaxis=dict(tickfont=dict(size=12, color='black'), autorange='reversed'),
     paper_bgcolor='#f5f5f5',
     plot_bgcolor='rgba(0,0,0,0)'
@@ -543,7 +538,7 @@ fig4.add_trace(go.Pie(
 
 # Ajustando o visual do gráfico
 fig4.update_layout(
-    title={'text': "Área Monitorada", 'y': 0.95, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'color': 'black', 'size': 21, 'family': 'Arial Black'}},
+    title={'text': "Área Monitorada na fazenda selecionada", 'y': 0.95, 'x': 0.5, 'xanchor': 'center', 'yanchor': 'top', 'font': {'color': 'black', 'size': 21, 'family': 'Arial Black'}},
     paper_bgcolor='#f5f5f5',
     plot_bgcolor='rgba(0,0,0,0)',
     showlegend=True,
@@ -558,11 +553,17 @@ fig4.update_layout(
     )
 )
 
+# make grouped_stand_farm_date a date
+grouped_stand_farm['DATE'] = pd.to_datetime(grouped_stand_farm['DATE'])
+
+grouped_stand_farm_date = grouped_stand_farm[grouped_stand_farm['DATE'].dt.date==data]
+
+
 # Base auxiliar: Calculate percentage of desfolha for each stand
-grouped_stand_farm['desfolha_percentage'] = (grouped_stand_farm['stand_desfolha_area_ha'] / grouped_stand_farm['stand_total_area_ha']) * 100
+grouped_stand_farm_date['desfolha_percentage'] = (grouped_stand_farm_date['stand_desfolha_area_ha'] / grouped_stand_farm_date['stand_total_area_ha']) * 100
 
 # Sort by percentage in descending order and get the top 10 stands
-top_10_stands_farm = grouped_stand_farm.sort_values(by='percentage', ascending=False).head(10)
+top_10_stands_farm = grouped_stand_farm_date.sort_values(by='percentage', ascending=False).head(10)
 
 # Define colors for the gradient (optional)
 colors = ["#FF0000", "#FF2200", "#FF4400", "#FF6600", "#FF8800", "#FFAA00", "#FFBB00", "#FFCC00", "#FFDD33", "#FFEE66"]
@@ -584,7 +585,11 @@ fig5.update_layout(
     xaxis_title=dict(text="Percentual de Desfolha (%)", font=dict(size=14, color='black')),
     yaxis_title=dict(text="Talhão", font=dict(size=14, color='black')),
     title_font=dict(size=16, family='Arial', color='black'),
-    xaxis=dict(tickfont=dict(size=12, color='black')),
+    xaxis=dict(
+        title="Percentual de Desfolha (%)",
+        tickfont=dict(size=12, color='black'),
+        range=[0, 100]  # Set fixed range for the percentage scale
+    ),
     yaxis=dict(tickfont=dict(size=12, color='black'), autorange='reversed'),
     paper_bgcolor='#f5f5f5',
     plot_bgcolor='rgba(0,0,0,0)'
