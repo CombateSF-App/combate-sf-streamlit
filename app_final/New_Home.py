@@ -21,7 +21,7 @@ st.set_page_config(page_title="MAXSATT - Plataforma de Monitoramento", layout="w
 #st.markdown("<h1 style='text-align:center;'font-size:40px;'>Plataforma de Monitoramento de Formigas por Sensoriamento Remoto</h1>", unsafe_allow_html=True)
 
 # Adicionando a logo do Maxsatt na aba lateral
-st.sidebar.image("logos\logotipo_Maxsatt.png", use_container_width=False, width=150)
+st.sidebar.image("logos\logotipo_Maxsatt.png", width=150)
 
 # Importando bases de dados (alterar aqui para mudar a base referenciada)
 pred_attack = pd.read_parquet("prediction\Filtered_pred_attack.parquet")
@@ -60,7 +60,9 @@ fazenda = st.sidebar.selectbox('Selecione a Fazenda', options=pred_attack[pred_a
 talhao = st.sidebar.selectbox('Selecione o Talhão', options=pred_attack[(pred_attack['FARM'] == fazenda)]['STAND'].unique())
 sorted_dates = sorted(pred_attack['DATE'].unique(), reverse=True)
 
-data = st.sidebar.selectbox('Selecione a data', options=sorted_dates, index=0)
+data = sorted_dates[0]
+
+st.sidebar.write(f"**Data:** {data}")
 
 # Bases filtradas com diferentes granularidades (pred_attack)
 filtered_data_company_date = pred_attack[(pred_attack['COMPANY'] == empresa) & (pred_attack['DATE'] == data)]
@@ -122,7 +124,7 @@ grouped_stand = (merged_df_all.dropna(subset=['Status'])
                 
 grouped_stand['stand_desfolha_area_ha'] = grouped_stand['count']/100
 grouped_stand['total'] = grouped_stand.groupby(['DATE', 'FARM', 'STAND'])['count'].transform('sum')
-grouped_stand['percentage'] = (grouped_stand['count'] / grouped_stand['total']) * 100
+grouped_stand['percentage'] = (grouped_stand['stand_desfolha_area_ha'] / grouped_stand['stand_total_area_ha']) * 100
 grouped_stand = grouped_stand[grouped_stand['Status'] == 'Desfolha'].sort_values(by='DATE')
 grouped_stand['stand_total_area_ha'] = grouped_stand['stand_total_area_ha'].round(1)
 grouped_stand['percentage'] = grouped_stand['percentage'].round(1)
@@ -154,7 +156,7 @@ average_farm['Average%'] = average_farm['Average%'].round(1)
 grouped_farm = grouped_farm.merge(average_farm, on=['FARM', 'Mes'], how='left')
 
 # Criando as colunas de recomendação
-grouped_farm['Si Monitorar'] = grouped_farm.apply(lambda row: row['farm_total_area_ha'] if row['Average%'] < 0.5 else None, axis=1)
+grouped_farm['SDD'] = grouped_farm.apply(lambda row: row['farm_total_area_ha'] if row['Average%'] < 0.5 else None, axis=1)
 grouped_farm['Controle 9M'] = grouped_farm.apply(lambda row: row['farm_total_area_ha'] if 0.5 <= row['Average%'] <= 5 else None, axis=1)
 grouped_farm['Controle 3M'] = grouped_farm.apply(lambda row: row['farm_total_area_ha'] if row['Average%'] > 5 else None, axis=1)
 grouped_farm = grouped_farm.sort_values(by=['FARM', 'DATE'])
@@ -170,7 +172,7 @@ grouped_farm_excel = (grouped_farm_excel.rename(columns={
     'DATE': 'Data', 'FARM': 'Fazenda', 'farm_total_area_ha': 'Area total da fazenda', 
     'farm_desfolha_area_ha': 'Area total em desfolha', 'percentage': 'Porcentagem'}))
 
-grouped_farm_excel.drop(columns = ['count', 'total', 'Mes', 'percentage_diff', 'Outra desfolha'], inplace=True)
+grouped_farm_excel.drop(columns = ['count', 'total', 'Mes', 'percentage_diff'], inplace=True)
 
 # Definindo a planilha a ser exportada
 #excel_farm = grouped_farm_excel.to_excel(index=False).encode('utf-8')
@@ -191,7 +193,7 @@ average_stand['Average%'] = average_stand['Average%'].round(1)
 grouped_stand = grouped_stand.merge(average_stand, on=['STAND', 'Mes'], how='left')
 
 # Criando as colunas de recomendação
-grouped_stand['Si Monitorar'] = grouped_stand.apply(lambda row: row['stand_total_area_ha'] if row['Average%'] < 0.5 else None, axis=1)
+grouped_stand['SDD'] = grouped_stand.apply(lambda row: row['stand_total_area_ha'] if row['Average%'] < 0.5 else None, axis=1)
 grouped_stand['Controle 9M'] = grouped_stand.apply(lambda row: row['stand_total_area_ha'] if 0.5 <= row['Average%'] <= 5 else None, axis=1)
 grouped_stand['Controle 3M'] = grouped_stand.apply(lambda row: row['stand_total_area_ha'] if row['Average%'] > 5 else None, axis=1)
 grouped_stand = grouped_stand.sort_values(by=['STAND', 'DATE'])
@@ -207,7 +209,7 @@ grouped_stand_excel = (grouped_stand_excel.rename(columns={
     'DATE': 'Data', 'FARM': 'Fazenda', 'STAND': 'Talhao', 'stand_total_area_ha': 'Area total do talhao', 
     'stand_desfolha_area_ha': 'Area total em desfolha', 'percentage': 'Porcentagem'}))
 
-grouped_stand_excel.drop(columns = ['count', 'total', 'Mes', 'percentage_diff', 'Outra desfolha'], inplace=True)
+grouped_stand_excel.drop(columns = ['count', 'total', 'Mes', 'percentage_diff'], inplace=True)
 
 # Definindo a planilha a ser exportada
 #excel_stand = grouped_stand_excel.to_excel(index=False).encode('utf-8')
@@ -217,21 +219,21 @@ grouped_stand_excel.drop(columns = ['count', 'total', 'Mes', 'percentage_diff', 
 grouped_stand_data = grouped_stand[grouped_stand['DATE'].dt.date==data]
 
 recommendations = {
-    'Si Monitorar': 'Sem infestação: seguir monitorando',
-    'Controle 9M': 'Infestação com baixa atividade: Controle nos próximos 9 meses',
-    'Controle 3M': 'Infestação com média a alta atividade: Controle nos próximos 3 meses',
-    'Outra desfolha': 'Aumento expressivo da desfolha: monitorar nos próximos meses'
+    'SDD': 'Area ha – Sem Desfolha Detectada: Seguir Monitorando',
+    'Controle 9M': 'Area ha - Infestação com baixo Índice de Desfolha: Programar Controle nos Próximos 9 Meses',
+    'Controle 3M': 'Area ha - Infestação com Médio a Alto Índice de Desfolha: Programar Controle Imediato ou em Até 3 Meses',
+    'Outra desfolha': 'Area ha - Monitorar o aumento da desfolha, investigando 	causas como pragas, doenças ou estresse, para evitar danos à produção.'
 }
 
 recomendacao_geral = pd.DataFrame({
-    'Recomendação': ['Si Monitorar', 'Controle 9M', 'Controle 3M', 'Outra desfolha'],
+    'Recomendação': ['SDD', 'Controle 9M', 'Controle 3M', 'Outra desfolha'],
     'Área': [
-        grouped_stand_data['Si Monitorar'].sum(),
+        grouped_stand_data['SDD'].sum(),
         grouped_stand_data['Controle 9M'].sum(),
         grouped_stand_data['Controle 3M'].sum(),
         grouped_stand_data['Outra desfolha'].sum()
     ],
-    'O que?': [recommendations['Si Monitorar'], recommendations['Controle 9M'], recommendations['Controle 3M'], recommendations['Outra desfolha']]
+    'O que?': [recommendations['SDD'], recommendations['Controle 9M'], recommendations['Controle 3M'], recommendations['Outra desfolha']]
 })
 
 # TABELA RECOMENDAÇÃO FAZENDA
@@ -239,14 +241,14 @@ recomendacao_geral = pd.DataFrame({
 grouped_stand_tabela = grouped_stand_data[grouped_stand_data['FARM']==fazenda]
 
 recomendacao_farm = pd.DataFrame({
-    'Recomendação': ['Si Monitorar', 'Controle 9M', 'Controle 3M', 'Outra desfolha'],
+    'Recomendação': ['SDD', 'Controle 9M', 'Controle 3M', 'Outra desfolha'],
     'Área': [
-        grouped_stand_tabela['Si Monitorar'].sum(),
+        grouped_stand_tabela['SDD'].sum(),
         grouped_stand_tabela['Controle 9M'].sum(),
         grouped_stand_tabela['Controle 3M'].sum(),
         grouped_stand_tabela['Outra desfolha'].sum()
     ],
-    'O que?': [recommendations['Si Monitorar'], recommendations['Controle 9M'], recommendations['Controle 3M'], recommendations['Outra desfolha']]
+    'O que?': [recommendations['SDD'], recommendations['Controle 9M'], recommendations['Controle 3M'], recommendations['Outra desfolha']]
 })
 
 # TABELA RESUMO MONITORAMENTO
@@ -365,17 +367,17 @@ total_area_desfolha = grouped_farm_date['farm_desfolha_area_ha'].sum()
 total_area_healthy = total_area_ha - total_area_desfolha
 
 # Define labels and sizes for the pie chart
-labels = ['Área Saudável', 'Área em Desfolha']
+labels = ['Área Sem Desfolha Detectada', 'Área em Desfolha']
 sizes = [total_area_healthy, total_area_desfolha]
-colors = ['darkgreen', 'red']  # Adjust colors to your preference
+colors = ['darkgreen', 'orange']  # Adjust colors to your preference
 
 # Generate the pie chart with custom labels and colors
 fig1 = go.Figure()
 
 fig1.add_trace(go.Pie(
-    labels=['Área Total Saudável', 'Área Total c/ Desfolha'],
+    labels=['Área Total Sem Desfolha Detectada', 'Área Total c/ Desfolha'],
     values=[total_area_healthy, total_area_desfolha],
-    marker=dict(colors=['darkgreen', 'red']),
+    marker=dict(colors=['darkgreen', 'orange']),
     textinfo='percent',
     textfont=dict(size=20),  # Increase percentage text size inside the pie chart
     hovertemplate=(
@@ -429,7 +431,7 @@ fig2.add_trace(go.Bar(
     y=top_10_farms['FARM'],
     orientation='h',
     name='Área em Desfolha',
-    marker=dict(color='red'),
+    marker=dict(color='orange'),
     text=top_10_farms['percentage'].round(1).astype(str) + '%',
     textposition='inside'
 ))
@@ -439,7 +441,7 @@ fig2.add_trace(go.Bar(
     x=top_10_farms['healthy_percentage'],
     y=top_10_farms['FARM'],
     orientation='h',
-    name='Área Saudável',
+    name='Área Sem Desfolha Detectada',
     marker=dict(color='darkgreen'),
     text=top_10_farms['healthy_percentage'].round(1).astype(str) + '%',
     textposition='inside'
@@ -482,7 +484,8 @@ grouped_stand_date['desfolha_percentage'] = (grouped_stand_date['stand_desfolha_
 top_10_stands_geral = grouped_stand_date.sort_values(by='percentage', ascending=False).head(10)
 
 # Define gradient colors for the bars
-colors = ["#FF0000", "#FF2200", "#FF4400", "#FF6600", "#FF8800", "#FFAA00", "#FFBB00", "#FFCC00", "#FFDD33", "#FFEE66"]
+colors = ["#ffae00", "#ffbd00", "#ffcb00", "#ffda00", "#ffe800", 
+          "#fff700", "#c8eb0a", "#92df14", "#5bd21d", "#24c627"]
 
 # Generate the bar chart
 fig3 = go.Figure()
@@ -516,8 +519,8 @@ healthy_area_farm = farm_area_ha_rounded - farm_area_desfolha_rounded
 
 # Definindo parâmetros para o gráfico
 sizes = [farm_area_desfolha_rounded, healthy_area_farm]
-colors = ['red', 'darkgreen']
-labels = ['Área Total c/ Desfolha', 'Área Total Saudável']
+colors = ['orange', 'darkgreen']
+labels = ['Área Total c/ Desfolha', 'Área Total Sem Desfolha Detectada']
 
 # Gerando o gráfico (Pie Chart)
 fig4 = go.Figure()
@@ -566,7 +569,8 @@ grouped_stand_farm_date['desfolha_percentage'] = (grouped_stand_farm_date['stand
 top_10_stands_farm = grouped_stand_farm_date.sort_values(by='percentage', ascending=False).head(10)
 
 # Define colors for the gradient (optional)
-colors = ["#FF0000", "#FF2200", "#FF4400", "#FF6600", "#FF8800", "#FFAA00", "#FFBB00", "#FFCC00", "#FFDD33", "#FFEE66"]
+colors = ["#ffae00", "#ffbd00", "#ffcb00", "#ffda00", "#ffe800", 
+          "#fff700", "#c8eb0a", "#92df14", "#5bd21d", "#24c627"]
 
 # Generate the bar chart
 fig5 = go.Figure()
@@ -600,8 +604,8 @@ healthy_area_stand = stand_area_ha_rounded - stand_area_desfolha_rounded
 
 # Definindo parâmetros para o gráfico
 sizes = [stand_area_desfolha_rounded, healthy_area_stand]
-colors = ['red', 'darkgreen']
-labels = ['Área Total c/ Desfolha', 'Área Total Saudável']
+colors = ['orange', 'darkgreen']
+labels = ['Área Total c/ Desfolha', 'Área Total Sem Desfolha Detectada']
 
 fig6 = go.Figure()
 fig6.add_trace(go.Pie(
@@ -780,9 +784,34 @@ def create_geopdf(mapa, bounds):
 def to_excel(df):
     output = BytesIO()
     with pd.ExcelWriter(output, engine="openpyxl") as writer:
-        df.to_excel(writer, index=False)
+        df_excel = df.drop(columns = ['Porcentagem', 'Average%'])
+        df_excel.to_excel(writer, index=False)
     output.seek(0)  
     return output
+
+# CARD RECOMENDAÇÃO
+def create_recommendation_card(title, recommendations):
+    rec_items = ''.join([
+        f"<li><b>{row['Recomendação']}</b>: {row['Área']:.2f} ha - {row['O que?']}</li>"
+        for _, row in recommendations.iterrows()
+    ])
+    
+    return f"""
+    <div style="
+        background-color: #fdf2e9;
+        border-radius: 10px;
+        padding: 20px;
+        margin: 10px 0;
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+        font-family: Arial, sans-serif;
+        font-size: 18px;
+    ">
+        <h2 style="color: #d35400; text-align: center;">{title}</h2>
+        <ul style="list-style-type: disc; padding-left: 20px; color: #333;">
+            {rec_items}
+        </ul>
+    </div>
+    """
 
 # DISPLAY
 
@@ -811,29 +840,6 @@ with col3:
     bg_border('#f5f5f5')
     st.plotly_chart(fig3, use_container_width=True)
 
-# Helper function to create a recommendation card
-def create_recommendation_card(title, recommendations):
-    rec_items = ''.join([
-        f"<li><b>{row['Recomendação']}</b>: {row['Área']:.2f} ha - {row['O que?']}</li>"
-        for _, row in recommendations.iterrows()
-    ])
-    
-    return f"""
-    <div style="
-        background-color: #fdf2e9;
-        border-radius: 10px;
-        padding: 20px;
-        margin: 10px 0;
-        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
-        font-family: Arial, sans-serif;
-        font-size: 16px;
-    ">
-        <h2 style="color: #d35400; text-align: center;">{title}</h2>
-        <ul style="list-style-type: disc; padding-left: 20px; color: #333;">
-            {rec_items}
-        </ul>
-    </div>
-    """
 
 st.markdown(create_recommendation_card("Recomendações Gerais", recomendacao_geral), unsafe_allow_html=True)
 
