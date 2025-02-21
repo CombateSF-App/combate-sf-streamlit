@@ -124,7 +124,7 @@ grouped_stand = (merged_df_all.dropna(subset=['Status'])
                 
 grouped_stand['stand_desfolha_area_ha'] = grouped_stand['count']/100
 grouped_stand['total'] = grouped_stand.groupby(['DATE', 'FARM', 'STAND'])['count'].transform('sum')
-grouped_stand['percentage'] = (grouped_stand['stand_desfolha_area_ha'] / grouped_stand['stand_total_area_ha']) * 100
+grouped_stand['percentage'] = (grouped_stand['count'] / grouped_stand['total']) * 100
 grouped_stand = grouped_stand[grouped_stand['Status'] == 'Desfolha'].sort_values(by='DATE')
 grouped_stand['stand_total_area_ha'] = grouped_stand['stand_total_area_ha'].round(1)
 grouped_stand['percentage'] = grouped_stand['percentage'].round(1)
