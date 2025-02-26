@@ -103,9 +103,10 @@ grouped_farm = (merged_df_all.dropna(subset=['Status'])
                 .merge(unique_area_per_farm[['FARM', 'farm_total_area_ha']], on='FARM', how='left'))
 grouped_farm['farm_desfolha_area_ha'] = grouped_farm['count']/100
 grouped_farm['total'] = grouped_farm.groupby(['DATE', 'FARM'])['count'].transform('sum')
-grouped_farm['percentage'] = (grouped_farm['count'] / grouped_farm['total']) * 100
 grouped_farm = grouped_farm[grouped_farm['Status'] == 'Desfolha'].sort_values(by='DATE')
 grouped_farm['farm_total_area_ha'] = grouped_farm['farm_total_area_ha'].round(1)
+grouped_farm['farm_desfolha_area_ha'] = grouped_farm[['farm_desfolha_area_ha', 'farm_total_area_ha']].min(axis=1)
+grouped_farm['percentage'] = (grouped_farm['farm_desfolha_area_ha'] / grouped_farm['farm_total_area_ha']) * 100
 grouped_farm['percentage'] = grouped_farm['percentage'].round(1)
 
 # Base filtrada para data selecionada
@@ -124,12 +125,13 @@ grouped_stand = (merged_df_all.dropna(subset=['Status'])
                 
 grouped_stand['stand_desfolha_area_ha'] = grouped_stand['count']/100
 grouped_stand['total'] = grouped_stand.groupby(['DATE', 'FARM', 'STAND'])['count'].transform('sum')
-grouped_stand['percentage'] = (grouped_stand['count'] / grouped_stand['total']) * 100
 grouped_stand = grouped_stand[grouped_stand['Status'] == 'Desfolha'].sort_values(by='DATE')
 grouped_stand['stand_total_area_ha'] = grouped_stand['stand_total_area_ha'].round(1)
-grouped_stand['percentage'] = grouped_stand['percentage'].round(1)
 grouped_stand = grouped_stand.drop_duplicates(subset=['DATE', 'FARM', 'STAND'])
 grouped_stand = grouped_stand.sort_values(by='stand_desfolha_area_ha', ascending=False)
+grouped_stand['stand_desfolha_area_ha'] = grouped_stand[['stand_desfolha_area_ha', 'stand_total_area_ha']].min(axis=1)
+grouped_stand['percentage'] = (grouped_stand['stand_desfolha_area_ha'] / grouped_stand['stand_total_area_ha']) * 100
+grouped_stand['percentage'] = grouped_stand['percentage'].round(1)
 
 # Base filtrada para data selecionada
 grouped_stand_date = grouped_stand[grouped_stand['DATE']==data]
@@ -219,10 +221,10 @@ grouped_stand_excel.drop(columns = ['count', 'total', 'Mes', 'percentage_diff'],
 grouped_stand_data = grouped_stand[grouped_stand['DATE'].dt.date==data]
 
 recommendations = {
-    'SDD': 'Area ha – Sem Desfolha Detectada: Seguir Monitorando',
-    'Controle 9M': 'Area ha - Infestação com baixo Índice de Desfolha: Programar Controle nos Próximos 9 Meses',
-    'Controle 3M': 'Area ha - Infestação com Médio a Alto Índice de Desfolha: Programar Controle Imediato ou em Até 3 Meses',
-    'Outra desfolha': 'Area ha - Monitorar o aumento da desfolha, investigando 	causas como pragas, doenças ou estresse, para evitar danos à produção.'
+    'SDD': 'Sem Desfolha Detectada',
+    'Controle 9M': 'Baixo Índice de Desfolha por Formigas',
+    'Controle 3M': 'Médio a Alto Índice de Desfolha por Formigas',
+    'Outra desfolha': 'Outra desfolha detectada'
 }
 
 recomendacao_geral = pd.DataFrame({
@@ -235,6 +237,10 @@ recomendacao_geral = pd.DataFrame({
     ],
     'O que?': [recommendations['SDD'], recommendations['Controle 9M'], recommendations['Controle 3M'], recommendations['Outra desfolha']]
 })
+
+# CARD ÁREA TOTAL AFETADA FAZENDA
+
+area_total_afetada_farm = grouped_stand_data['Controle 9M'].sum() + grouped_stand_data['Controle 3M'].sum() + grouped_stand_data['Outra desfolha'].sum()
 
 # TABELA RECOMENDAÇÃO FAZENDA
 
@@ -250,6 +256,12 @@ recomendacao_farm = pd.DataFrame({
     ],
     'O que?': [recommendations['SDD'], recommendations['Controle 9M'], recommendations['Controle 3M'], recommendations['Outra desfolha']]
 })
+
+# CARD ÁREA TOTAL AFETADA TALHÃO
+
+area_total_afetada_stand = grouped_stand_tabela['Controle 9M'].sum() + grouped_stand_tabela['Controle 3M'].sum() + grouped_stand_tabela['Outra desfolha'].sum()
+area_total_afetada_stand = round(area_total_afetada_stand,1)
+
 
 # TABELA RESUMO MONITORAMENTO
 
@@ -362,16 +374,13 @@ sizes = [other_area_ha, farm_area_ha]
 colors = ['lightgray', 'darkgreen']
 labels = ['Demais fazendas', fazenda]
 
-# Calculate total desfolha and healthy areas
 total_area_desfolha = grouped_farm_date['farm_desfolha_area_ha'].sum()
 total_area_healthy = total_area_ha - total_area_desfolha
 
-# Define labels and sizes for the pie chart
 labels = ['Área Sem Desfolha Detectada', 'Área em Desfolha']
 sizes = [total_area_healthy, total_area_desfolha]
-colors = ['darkgreen', 'orange']  # Adjust colors to your preference
+colors = ['darkgreen', 'orange']  
 
-# Generate the pie chart with custom labels and colors
 fig1 = go.Figure()
 
 fig1.add_trace(go.Pie(
@@ -379,7 +388,7 @@ fig1.add_trace(go.Pie(
     values=[total_area_healthy, total_area_desfolha],
     marker=dict(colors=['darkgreen', 'orange']),
     textinfo='percent',
-    textfont=dict(size=20),  # Increase percentage text size inside the pie chart
+    textfont=dict(size=20),  
     hovertemplate=(
         '<b>%{label}</b><br>'
         'Área: %{value:.2f} ha<br>'
@@ -388,7 +397,6 @@ fig1.add_trace(go.Pie(
     showlegend=True
 ))
 
-# Update the layout to move the legend to the bottom of the page
 fig1.update_layout(
     title={
         'text': "Área Monitorada",
@@ -402,13 +410,13 @@ fig1.update_layout(
     plot_bgcolor='rgba(0,0,0,0)',
     showlegend=True,
     legend=dict(
-        orientation="h",  # Horizontal legend
+        orientation="h",  
         yanchor="top",
-        y=-0.3,  # Move legend farther below the pie chart (adjust if needed)
+        y=-0.3,  
         xanchor="center",
         x=0.5,
         font=dict(size=14, color='black'),
-        bgcolor='rgba(0,0,0,0)'  # Transparent background for the legend
+        bgcolor='rgba(0,0,0,0)'  
     )
 )
 
@@ -416,16 +424,14 @@ grouped_farm_date['percentage'] = (
     grouped_farm_date['farm_desfolha_area_ha'] / grouped_farm_date['farm_total_area_ha']
 ) * 100
 
-# Sort by desfolha area percentage and get top 10 farms
+# GRÁFICO TOP 10 TALHÕES COM MAIOR PORCENTAGEM DE DESFOLHA (GERAL)
+
 top_10_farms = grouped_farm_date.sort_values(by='percentage', ascending=False).head(10)
 
-# Calculate the healthy percentage for each farm
 top_10_farms['healthy_percentage'] = 100 - top_10_farms['percentage']
 
-# Generate the stacked bar chart
 fig2 = go.Figure()
 
-# Add the red portion for desfolha percentage
 fig2.add_trace(go.Bar(
     x=top_10_farms['percentage'],
     y=top_10_farms['FARM'],
@@ -436,7 +442,6 @@ fig2.add_trace(go.Bar(
     textposition='inside'
 ))
 
-# Add the green portion for the healthy area percentage
 fig2.add_trace(go.Bar(
     x=top_10_farms['healthy_percentage'],
     y=top_10_farms['FARM'],
@@ -453,52 +458,47 @@ fig2.update_layout(
     yaxis_title=dict(text="Fazenda", font=dict(size=14, color='black')),
     xaxis=dict(
         tickfont=dict(size=12, color='black'),
-        range=[0, 100],  # Ensure the full 0-100% scale is displayed
+        range=[0, 100], 
     ),
     yaxis=dict(
         tickfont=dict(size=12, color='black'),
         autorange='reversed'
     ),
-    barmode='stack',  # Stack the bars
+    barmode='stack', 
     title_font=dict(size=16, family='Arial', color='black'),
     paper_bgcolor='#f5f5f5',
     plot_bgcolor='rgba(0,0,0,0)',
     showlegend=True,
     legend=dict(
-        orientation='h',  # Horizontal orientation for the legend
+        orientation='h', 
         yanchor='top',
-        y=-0.3,           # Position below the graph (adjust if needed)
+        y=-0.3,
         xanchor='center',
         x=0.5,
         font=dict(size=12, color='black'),
-        bgcolor='rgba(0,0,0,0)'  # Transparent background for the legend
+        bgcolor='rgba(0,0,0,0)'
     )
 )
 
-# TALHÕES MAIS INFESTADOS GERAL
+# TALHÕES MAIS INFESTADOS FAZENDA
 
-# Calculate percentage of desfolha for each stand
 grouped_stand_date['desfolha_percentage'] = (grouped_stand_date['stand_desfolha_area_ha'] / grouped_stand_date['stand_total_area_ha']) * 100
 
-# Sort by percentage and get the top 10
-top_10_stands_geral = grouped_stand_date.sort_values(by='percentage', ascending=False).head(10)
+top_10_stands_geral = grouped_stand_date.sort_values(by='desfolha_percentage', ascending=False).head(10)
 
-# Define gradient colors for the bars
 colors = ["#ffae00", "#ffbd00", "#ffcb00", "#ffda00", "#ffe800", 
           "#fff700", "#c8eb0a", "#92df14", "#5bd21d", "#24c627"]
 
-# Generate the bar chart
 fig3 = go.Figure()
 fig3.add_trace(go.Bar(
-    x=top_10_stands_geral['percentage'],
+    x=top_10_stands_geral['desfolha_percentage'],
     y=top_10_stands_geral['STAND'],
     orientation='h',
     marker=dict(color=colors),
-    text=top_10_stands_geral['percentage'].round(1).astype(str) + '%',  # Display percentage text
+    text=top_10_stands_geral['desfolha_percentage'].round(1).astype(str) + '%', 
     textposition='auto'
 ))
 
-# Adjust chart layout
 fig3.update_layout(
     title='Top 10 Talhões com Maior Percentual de Desfolha',
     xaxis_title=dict(text="Percentual de Desfolha (%)", font=dict(size=14, color='black')),
@@ -507,7 +507,7 @@ fig3.update_layout(
     xaxis=dict(
         title="Percentual de Desfolha (%)",
         tickfont=dict(size=12, color='black'),
-        range=[0, 100]  # Set fixed range for the percentage scale
+        range=[0, 100]
     ),
     yaxis=dict(tickfont=dict(size=12, color='black'), autorange='reversed'),
     paper_bgcolor='#f5f5f5',
@@ -522,21 +522,21 @@ sizes = [farm_area_desfolha_rounded, healthy_area_farm]
 colors = ['orange', 'darkgreen']
 labels = ['Área Total c/ Desfolha', 'Área Total Sem Desfolha Detectada']
 
-# Gerando o gráfico (Pie Chart)
+# Gerando o gráfico
 fig4 = go.Figure()
 fig4.add_trace(go.Pie(
     labels=labels,
     values=sizes,
     marker=dict(colors=colors),
     textinfo='percent',
-    texttemplate='%{percent:.1%}',  # Percentages displayed inside
-    insidetextorientation='horizontal',  # Horizontal text orientation
+    texttemplate='%{percent:.1%}', 
+    insidetextorientation='horizontal',  
     hovertemplate=(
         '<b>%{label}</b><br>'
         'Área: %{value:.2f} ha<br>'
         'Porcentagem: %{percent:.1%}<extra></extra>'
     ),
-    textfont=dict(size=20, color='white')  # Larger white text for percentages
+    textfont=dict(size=20, color='white')  
 ))
 
 # Ajustando o visual do gráfico
@@ -546,9 +546,9 @@ fig4.update_layout(
     plot_bgcolor='rgba(0,0,0,0)',
     showlegend=True,
     legend=dict(
-        orientation='h',          # Horizontal legend at the bottom
+        orientation='h',    
         yanchor='bottom',
-        y=-0.2,                   # Position below the chart
+        y=-0.2,   
         xanchor='center',
         x=0.5,
         font=dict(size=14, color='black'),
@@ -556,34 +556,29 @@ fig4.update_layout(
     )
 )
 
-# make grouped_stand_farm_date a date
+# FAZENDAS MAIS INFESTADAS
+
 grouped_stand_farm['DATE'] = pd.to_datetime(grouped_stand_farm['DATE'])
 
 grouped_stand_farm_date = grouped_stand_farm[grouped_stand_farm['DATE'].dt.date==data]
 
-
-# Base auxiliar: Calculate percentage of desfolha for each stand
 grouped_stand_farm_date['desfolha_percentage'] = (grouped_stand_farm_date['stand_desfolha_area_ha'] / grouped_stand_farm_date['stand_total_area_ha']) * 100
 
-# Sort by percentage in descending order and get the top 10 stands
-top_10_stands_farm = grouped_stand_farm_date.sort_values(by='percentage', ascending=False).head(10)
+top_10_stands_farm = grouped_stand_farm_date.sort_values(by='desfolha_percentage', ascending=False).head(10)
 
-# Define colors for the gradient (optional)
 colors = ["#ffae00", "#ffbd00", "#ffcb00", "#ffda00", "#ffe800", 
           "#fff700", "#c8eb0a", "#92df14", "#5bd21d", "#24c627"]
 
-# Generate the bar chart
 fig5 = go.Figure()
 fig5.add_trace(go.Bar(
-    x=top_10_stands_farm['percentage'],
+    x=top_10_stands_farm['desfolha_percentage'],
     y=top_10_stands_farm['STAND'],
     orientation='h',
     marker=dict(color=colors),
-    text=top_10_stands_farm['percentage'].round(1).astype(str) + '%',  # Display percentage as text
+    text=top_10_stands_farm['desfolha_percentage'].round(1).astype(str) + '%', 
     textposition='auto'
 ))
 
-# Adjust chart appearance
 fig5.update_layout(
     title='Top 10 Talhões com Maior Percentual de Desfolha na fazenda {}'.format(fazenda),
     xaxis_title=dict(text="Percentual de Desfolha (%)", font=dict(size=14, color='black')),
@@ -592,12 +587,14 @@ fig5.update_layout(
     xaxis=dict(
         title="Percentual de Desfolha (%)",
         tickfont=dict(size=12, color='black'),
-        range=[0, 100]  # Set fixed range for the percentage scale
+        range=[0, 100]
     ),
     yaxis=dict(tickfont=dict(size=12, color='black'), autorange='reversed'),
     paper_bgcolor='#f5f5f5',
     plot_bgcolor='rgba(0,0,0,0)'
 )
+
+# GRÁFICO ÁREA MONITORADA
 
 # Variável auxiliar
 healthy_area_stand = stand_area_ha_rounded - stand_area_desfolha_rounded
@@ -613,15 +610,15 @@ fig6.add_trace(go.Pie(
     values=sizes,
     marker=dict(colors=colors),
     textinfo='percent',
-    texttemplate='%{percent:.1%}',  # Percentages displayed inside
-    textposition='inside',          # Forces text to stay inside
-    insidetextorientation='auto',   # Dynamically adjusts text orientation
+    texttemplate='%{percent:.1%}',  
+    textposition='inside',  
+    insidetextorientation='auto',  
     hovertemplate=(
         '<b>%{label}</b><br>'
         'Área: %{value:.2f} ha<br>'
         'Porcentagem: %{percent:.1%}<extra></extra>'
     ),
-    textfont=dict(size=18, color='white')  # Reduced size to fit inside small segments
+    textfont=dict(size=18, color='white') 
 ))
 
 # Ajustando o visual do gráfico
@@ -631,9 +628,9 @@ fig6.update_layout(
     plot_bgcolor='rgba(0,0,0,0)',
     showlegend=True,
     legend=dict(
-        orientation='h',          # Horizontal legend at the bottom
+        orientation='h',    
         yanchor='bottom',
-        y=-0.2,                   # Position below the chart
+        y=-0.2,  
         xanchor='center',
         x=0.5,
         font=dict(size=14, color='black'),
@@ -789,10 +786,11 @@ def to_excel(df):
     output.seek(0)  
     return output
 
-# CARD RECOMENDAÇÃO
+# CARD RECOMENDAÇÕES
+
 def create_recommendation_card(title, recommendations):
     rec_items = ''.join([
-        f"<li><b>{row['Recomendação']}</b>: {row['Área']:.2f} ha - {row['O que?']}</li>"
+        f"<li><span style='background-color: white; padding: 4px 8px; border-radius: 5px; border: 1px solid black; font-weight: bold; font-size: 19px;'>{row['Área']:.2f} ha</span> - {row['O que?']}</li>"
         for _, row in recommendations.iterrows()
     ])
     
@@ -804,7 +802,7 @@ def create_recommendation_card(title, recommendations):
         margin: 10px 0;
         box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
         font-family: Arial, sans-serif;
-        font-size: 18px;
+        font-size: 20px;
     ">
         <h2 style="color: #d35400; text-align: center;">{title}</h2>
         <ul style="list-style-type: disc; padding-left: 20px; color: #333;">
@@ -813,20 +811,23 @@ def create_recommendation_card(title, recommendations):
     </div>
     """
 
+
 # DISPLAY
 
 # Visão geral
 
 st.subheader("Visão geral das fazendas")
 
-col1, col2, col3, col4  = st.columns([1, 1, 1, 1])
+col1, col2, col3, col4, col5  = st.columns([1, 1, 1, 1, 1])
 with col1: 
     st.markdown(create_card('Área total monitorada (ha)', total_area_ha_rounded), unsafe_allow_html=True)
 with col2:
     st.markdown(create_card('Área total em desfolha (ha)', total_area_desfolha_rounded), unsafe_allow_html=True)
 with col3:
-    st.markdown(create_card('Número total de fazendas', num_unique_farms), unsafe_allow_html=True)
+    st.markdown(create_card('Área total afetada (ha)', area_total_afetada_farm), unsafe_allow_html=True)
 with col4:
+    st.markdown(create_card('Número total de fazendas', num_unique_farms), unsafe_allow_html=True)
+with col5:
     st.markdown(create_card('Número total de talhões', num_unique_stands), unsafe_allow_html=True)
 
 col1, col2, col3 = st.columns([3, 4, 4])
@@ -847,12 +848,14 @@ st.markdown(create_recommendation_card("Recomendações Gerais", recomendacao_ge
 
 st.subheader("Informações das fazendas")
 
-col1, col2, col3  = st.columns([1, 1, 1])
+col1, col2, col3, col4  = st.columns([1, 1, 1, 1])
 with col1: 
     st.markdown(create_card('Área total na fazenda selecionada (ha)',farm_area_ha_rounded), unsafe_allow_html=True)
 with col2:
     st.markdown(create_card('Área em desfolha na fazenda (ha)', farm_area_desfolha_rounded), unsafe_allow_html=True)
 with col3:
+    st.markdown(create_card('Área total afetada (ha)', area_total_afetada_stand), unsafe_allow_html=True)
+with col4:
     st.markdown(create_card('Número de talhões na fazenda', num_unique_stands_farm), unsafe_allow_html=True)
 
 col1, col2 = st.columns([1, 1])
