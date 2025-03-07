@@ -637,6 +637,7 @@ fig6.update_layout(
         bgcolor='rgba(0, 0, 0, 0)'
     )
 )
+
 # MAPA DE CALOR FAZENDA
 
 # Criando o mapa
@@ -749,31 +750,326 @@ fig10.update_layout(
 
 # DOWNLOAD GEOPDF
 
-def create_geopdf(mapa, bounds):
-    pdf_buffer = io.BytesIO()
-    plt.figure(mapa.number) 
-    plt.savefig(pdf_buffer, format="pdf", bbox_inches="tight")
-    plt.close(mapa)
+import io
+import os
+import tempfile
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+import rasterio
+from rasterio.transform import from_origin
+from rasterio.features import rasterize
+from osgeo import gdal
+from matplotlib import cm
+import contextily as ctx
 
-    writer = PdfWriter()
-    pdf_buffer.seek(0)
-    reader = PdfReader(pdf_buffer)
-    writer.add_page(reader.pages[0])
+def create_geopdf(df, selected_farm, selected_date, 
+                           x_res=0.000100001, y_res=0.000100001,
+                           basemap_provider=ctx.providers.Esri.WorldImagery,
+                           out_pdf=None):
+    """
+    Creates a georeferenced GeoPDF that composites a satellite basemap with
+    your canopy cover overlay (derived from point data without interpolation).
+    This version accepts a DataFrame directly.
+    
+    Parameters:
+      df : DataFrame
+          The DataFrame containing point data (with columns: X, Y, canopycov, etc.)
+          Assumed to be in EPSG:4326 (lon/lat).
+      selected_farm : str
+          Farm identifier to filter the data.
+      selected_date : str
+          Date string (e.g., "2024-01-05") to filter the data.
+      x_res, y_res : float, optional
+          Resolution in degrees (default ~0.0001°; about 5-10 m per pixel).
+      basemap_provider : xyzservices.TileProvider, optional
+          The basemap tile provider (default: Esri World Imagery).
+      out_pdf : str or None, optional
+          Output PDF filename; if None, a default name is used.
+    
+    Returns:
+      BytesIO
+          A BytesIO object containing the GeoPDF.
+    """
+    # Filter the DataFrame
+    df_filtered = df[(df["FARM"] == selected_farm) & (df["DATE"] == selected_date)]
+    if df_filtered.empty:
+        raise ValueError(f"No data found for farm '{selected_farm}' on date '{selected_date}'")
+    
+    # Rename columns for clarity (assuming the columns are named as in your example)
+    df_filtered = df_filtered.rename(columns={"X": "lon", "Y": "lat", "canopycov": "value"})
+    
+    # Create a GeoDataFrame (EPSG:4326)
+    gdf = gpd.GeoDataFrame(df_filtered, 
+                           geometry=gpd.points_from_xy(df_filtered.lon, df_filtered.lat),
+                           crs="EPSG:4326")
+    
+    # Determine bounds from the GeoDataFrame (no extra buffer)
+    minx, miny, maxx, maxy = gdf.total_bounds
+    
+    # Define affine transform using from_origin (west, north, x_res, y_res)
+    transform = from_origin(minx, maxy, x_res, y_res)
+    
+    # Compute raster dimensions
+    width = int((maxx - minx) / x_res)
+    height = int((maxy - miny) / y_res)
+    
+    # Prepare shapes for rasterization: each point gets its "value"
+    shapes = ((geom, val) for geom, val in zip(gdf.geometry, gdf["value"]))
+    
+    # Rasterize the point data; cells with no data remain NaN
+    canopy_raster = rasterize(
+        shapes=shapes,
+        out_shape=(height, width),
+        transform=transform,
+        fill=np.nan,
+        dtype='float32'
+    )
+    
+    # Normalize valid values (only over cells that are not NaN)
+    min_val = np.nanmin(canopy_raster)
+    max_val = np.nanmax(canopy_raster)
+    norm = (canopy_raster - min_val) / (max_val - min_val)
+    
+    # Apply the RdYlGn colormap (returns RGBA)
+    colormap = cm.get_cmap("RdYlGn")
+    colors = colormap(norm)  # shape: (height, width, 4)
+    
+    # Set alpha: where canopy_raster is NaN, alpha becomes 0 (transparent); else 1 (opaque)
+    mask = np.isnan(canopy_raster)
+    colors[..., 3][mask] = 0
+    colors[..., 3][~mask] = 1
+    
+    # Convert RGBA (0-1) to 8-bit (0-255)
+    colors_8bit = (colors * 255).astype(np.uint8)
+    
+    # Use a temporary directory to store intermediate files
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Save canopy layer as a 4-band (RGBA) GeoTIFF in EPSG:4326
+        canopy_tif = os.path.join(tmpdir, f"canopy_cover_{selected_farm}_{selected_date}.tif")
+        with rasterio.open(
+            canopy_tif, "w",
+            driver="GTiff",
+            height=height,
+            width=width,
+            count=4,
+            dtype="uint8",
+            crs="EPSG:4326",
+            transform=transform
+        ) as dst:
+            dst.write(colors_8bit[:, :, 0], 1)
+            dst.write(colors_8bit[:, :, 1], 2)
+            dst.write(colors_8bit[:, :, 2], 3)
+            dst.write(colors_8bit[:, :, 3], 4)
+        print(f"Canopy GeoTIFF saved as {canopy_tif}")
+        
+        # Step 2: Download a basemap for the same extent using contextily's bounds2raster.
+        basemap_tif = os.path.join(tmpdir, "basemap.tif")
+        img, ext = ctx.bounds2raster(minx, miny, maxx, maxy, basemap_tif, ll=True, source=basemap_provider)
+        print(f"Basemap GeoTIFF saved as {basemap_tif}")
+        
+        # Step 3: Composite the canopy over the basemap using GDAL Warp (forcing EPSG:4326)
+        composite_tif = os.path.join(tmpdir, f"composite_{selected_farm}_{selected_date}.tif")
+        gdal.Warp(
+            composite_tif,
+            [basemap_tif, canopy_tif],
+            options=gdal.WarpOptions(format="GTiff", dstNodata=0, dstSRS="EPSG:4326")
+        )
+        print(f"Composite GeoTIFF saved as {composite_tif}")
+        
+        # Step 4: Convert the composite to a GeoPDF using GDAL Translate.
+        if out_pdf is None:
+            out_pdf = os.path.join(tmpdir, f"composite_{selected_farm}_{selected_date}.pdf")
+        else:
+            out_pdf = os.path.join(tmpdir, out_pdf)
+        gdal.Translate(
+            out_pdf,
+            composite_tif,
+            format="PDF",
+            outputType=gdal.GDT_Byte,
+            creationOptions=["TILED=YES", "COLORSPACE=RGB"]
+        )
+        print(f"GeoPDF saved as {out_pdf}")
+        
+        # Read the final PDF into a BytesIO object
+        with open(out_pdf, "rb") as f:
+            pdf_bytes = f.read()
+    
+    # Temporary files are cleaned up automatically here.
+    return io.BytesIO(pdf_bytes)
 
-    metadata = {
-        '/Title': 'GeoPDF do Mapa',
-        '/Author': 'Combate SF',
-        '/Subject': 'GeoPDF com dados geográficos',
-        '/Keywords': 'Mapa, GeoPDF, Python',
-        '/Geospatial_Coordinates': f'{bounds}',
-        '/CRS': 'EPSG:32722',
-    }
-    writer.add_metadata(metadata)
+import io
+import os
+import tempfile
+import numpy as np
+import pandas as pd
+import geopandas as gpd
+import rasterio
+from rasterio.transform import from_origin
+from rasterio.features import rasterize
+from osgeo import gdal
+from matplotlib import cm
+import contextily as ctx
 
-    final_buffer = io.BytesIO()
-    writer.write(final_buffer)
-    final_buffer.seek(0)
-    return final_buffer
+def create_geopdf_by_stand(df, selected_stand, selected_date, 
+                           x_res=0.000100001, y_res=0.000100001,
+                           basemap_provider=ctx.providers.Esri.WorldImagery,
+                           out_pdf=None):
+    """
+    Creates a georeferenced GeoPDF that composites a satellite basemap with
+    your canopy cover overlay (derived from point data without interpolation),
+    filtering by STAND. The function computes a SQUARE bounding box
+    based on the stand's geometry.
+    
+    Parameters:
+      df : DataFrame
+          The DataFrame containing point data with columns including "X", "Y", 
+          "canopycov", and "STAND". Coordinates are assumed to be in EPSG:4326.
+      selected_stand : str
+          The value in the "STAND" column used for filtering.
+      selected_date : str
+          Date string (e.g., "2024-01-05") to filter the data.
+      x_res, y_res : float, optional
+          Resolution in degrees (default ~0.0001°; about 5-10 m per pixel).
+      basemap_provider : xyzservices.TileProvider, optional
+          The basemap tile provider (default: Esri World Imagery).
+      out_pdf : str or None, optional
+          Output PDF filename; if None, a default name is used.
+    
+    Returns:
+      BytesIO
+          A BytesIO object containing the GeoPDF.
+    """
+    # Filter the DataFrame by STAND and DATE
+    df_filtered = df[(df["STAND"] == selected_stand) & (df["DATE"] == selected_date)]
+    if df_filtered.empty:
+        raise ValueError(f"No data found for stand '{selected_stand}' on date '{selected_date}'")
+    
+    # Rename columns for clarity
+    df_filtered = df_filtered.rename(columns={"X": "lon", "Y": "lat", "canopycov": "value"})
+    
+    # Create a GeoDataFrame from the point data (EPSG:4326)
+    gdf = gpd.GeoDataFrame(df_filtered, 
+                           geometry=gpd.points_from_xy(df_filtered.lon, df_filtered.lat),
+                           crs="EPSG:4326")
+    
+    # Compute the original bounds of the stand
+    orig_bounds = gdf.total_bounds  # (minx, miny, maxx, maxy)
+    minx, miny, maxx, maxy = orig_bounds
+    center_x = (minx + maxx) / 2.0
+    center_y = (miny + maxy) / 2.0
+    half_side = max((maxx - minx), (maxy - miny)) / 2.0
+    
+    # Create a square bounding box based on the center and half_side
+    square_minx = center_x - half_side
+    square_maxx = center_x + half_side
+    square_miny = center_y - half_side
+    square_maxy = center_y + half_side
+    
+    # Define the affine transform using from_origin (west, north, x_res, y_res)
+    transform = from_origin(square_minx, square_maxy, x_res, y_res)
+    
+    # Compute raster dimensions based on the square bounds
+    width = int((square_maxx - square_minx) / x_res)
+    height = int((square_maxy - square_miny) / y_res)
+    
+    # Prepare shapes for rasterization: each point gets its "value"
+    shapes = ((geom, val) for geom, val in zip(gdf.geometry, gdf["value"]))
+    
+    # Rasterize the point data; cells with no data remain NaN
+    canopy_raster = rasterize(
+        shapes=shapes,
+        out_shape=(height, width),
+        transform=transform,
+        fill=np.nan,
+        dtype='float32'
+    )
+    
+    # Normalize valid values (only over non-NaN cells)
+    min_val = np.nanmin(canopy_raster)
+    max_val = np.nanmax(canopy_raster)
+    norm = (canopy_raster - min_val) / (max_val - min_val)
+    
+    # Apply the RdYlGn colormap (returns RGBA)
+    colormap = cm.get_cmap("RdYlGn")
+    colors = colormap(norm)  # shape: (height, width, 4)
+    
+    # Set alpha: where canopy_raster is NaN, alpha becomes 0 (transparent), else opaque (1)
+    mask = np.isnan(canopy_raster)
+    colors[..., 3][mask] = 0
+    colors[..., 3][~mask] = 1
+    
+    # Convert RGBA (0-1) to 8-bit (0-255)
+    colors_8bit = (colors * 255).astype(np.uint8)
+    
+    # Use a temporary directory for intermediate files
+    with tempfile.TemporaryDirectory() as tmpdir:
+        # Save canopy layer as a 4-band (RGBA) GeoTIFF in EPSG:4326
+        canopy_tif = os.path.join(tmpdir, f"canopy_cover_{selected_stand}_{selected_date}.tif")
+        with rasterio.open(
+            canopy_tif, "w",
+            driver="GTiff",
+            height=height,
+            width=width,
+            count=4,
+            dtype="uint8",
+            crs="EPSG:4326",
+            transform=transform
+        ) as dst:
+            dst.write(colors_8bit[:, :, 0], 1)  # Red
+            dst.write(colors_8bit[:, :, 1], 2)  # Green
+            dst.write(colors_8bit[:, :, 2], 3)  # Blue
+            dst.write(colors_8bit[:, :, 3], 4)  # Alpha
+        print(f"Canopy GeoTIFF saved as {canopy_tif}")
+        
+        # Step 2: Download a basemap for the same square extent using contextily.bounds2raster.
+        basemap_tif = os.path.join(tmpdir, "basemap.tif")
+        img, ext = ctx.bounds2raster(square_minx, square_miny, square_maxx, square_maxy,
+                                      basemap_tif, ll=True, source=basemap_provider)
+        print(f"Basemap GeoTIFF saved as {basemap_tif}")
+        
+        # Step 3: Composite the canopy over the basemap using GDAL Warp (force EPSG:4326)
+        composite_tif = os.path.join(tmpdir, f"composite_{selected_stand}_{selected_date}.tif")
+        gdal.Warp(
+            composite_tif,
+            [basemap_tif, canopy_tif],
+            options=gdal.WarpOptions(format="GTiff", dstNodata=0, dstSRS="EPSG:4326")
+        )
+        print(f"Composite GeoTIFF saved as {composite_tif}")
+        
+        # Step 4: Convert the composite GeoTIFF to a GeoPDF using GDAL Translate.
+        if out_pdf is None:
+            out_pdf = os.path.join(tmpdir, f"composite_{selected_stand}_{selected_date}.pdf")
+        else:
+            out_pdf = os.path.join(tmpdir, out_pdf)
+        gdal.Translate(
+            out_pdf,
+            composite_tif,
+            format="PDF",
+            outputType=gdal.GDT_Byte,
+            creationOptions=["TILED=YES", "COLORSPACE=RGB"]
+        )
+        print(f"GeoPDF saved as {out_pdf}")
+        
+        # Read the final PDF into a BytesIO object
+        with open(out_pdf, "rb") as f:
+            pdf_bytes = f.read()
+    
+    return io.BytesIO(pdf_bytes)
+
+# Example usage in Streamlit:
+# pdf_buffer = create_geopdf_by_stand(df, "Stand_001", "2024-01-05")
+# st.sidebar.download_button(label="Baixar GeoPDF do talhão",
+#                            data=pdf_buffer.getvalue(),
+#                            file_name="talhao_georreferenciado.pdf",
+#                            mime="application/pdf")
+
+# Example usage in Streamlit:
+# pdf_buffer = create_geopdf_by_stand(df, "Stand_001", "2024-01-05")
+# st.sidebar.download_button(label="Baixar GeoPDF do talhão",
+#                            data=pdf_buffer.getvalue(),
+#                            file_name="talhao_georreferenciado.pdf",
+#                            mime="application/pdf")
 
 
 # DOWNLOAD EXCEL
@@ -919,18 +1215,19 @@ st.sidebar.download_button(
 # GeoPDFs
 st.sidebar.write("Baixar GeoPDF")
 
-bounds_farm = stands_sel.total_bounds
-st.sidebar.download_button(
-    label="Baixar GeoPDF da fazenda",
-    data=create_geopdf(fig7, bounds_farm).getvalue(),
-    file_name="fazenda_georreferenciado.pdf",
-    mime="application/pdf"
-)
+pdf_buffer = create_geopdf(pred_attack, fazenda, data)
 
-bounds_stand = stands_sel.total_bounds
+st.sidebar.download_button(label="Baixar GeoPDF da fazenda",
+                            data=pdf_buffer.getvalue(),
+                            file_name=f"fazenda_{fazenda}_georreferenciado.pdf",
+                            mime="application/pdf")
+
+
+pdf_buffer1 = create_geopdf_by_stand(pred_attack, talhao, data)
+
 st.sidebar.download_button(
     label="Baixar GeoPDF do talhão",
-    data=create_geopdf(fig8, bounds_stand).getvalue(),
-    file_name="talhao_georreferenciado.pdf",
+    data=pdf_buffer1.getvalue(),
+    file_name=f"fazenda_{fazenda}_talhao_{talhao}_georreferenciado.pdf",
     mime="application/pdf"
 )
