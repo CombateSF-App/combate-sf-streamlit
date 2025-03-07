@@ -9,3 +9,7 @@ PyPDF2[PdfWriter]
 PyPDF2[PdfReader]
 pathlib
 openpyxl
+numpy>=1.20
+rasterio>=1.1.5
+GDAL>=3.0.0
+matplotlib>=3.3
